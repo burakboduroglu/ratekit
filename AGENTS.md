@@ -1,0 +1,27 @@
+# ratekit
+
+Open-source usage metering and rating engine. Learning project: Java 21, Spring Boot 3, Maven multi-module, Kafka, PostgreSQL. Three services: `ingest`, `rating`, `billing`.
+
+## Rules
+
+- Keep this file a short map; detail lives in `docs/` (see the `project-context` skill).
+- Prefer small, reviewable changes and run the relevant checks before handoff.
+- To-dos, status and project decisions live in this repo (`docs/`), not in the vault.
+- The owner is learning the architecture: go one step at a time, explain the why of each decision, and wait for review before the next step.
+- Delivery semantics are at-least-once plus idempotent consumers. Never claim exactly-once.
+- Money uses `BigDecimal` with an explicit rounding rule, never `double`.
+- Balance model is prepaid with a hard stop: an event that exceeds the balance is rejected.
+- License is Apache-2.0.
+- AGPL projects (Lago, CGRateS) are read for ideas only; do not copy their code.
+
+## Commands
+
+- JDK 21 is keg-only. Set it per shell before Maven: `export JAVA_HOME=/opt/homebrew/opt/openjdk@21`. The system default is JDK 25, which is not the target.
+- Build and test: `mvn -B verify` from the repo root.
+- Containers run on Podman (no Docker). The VM must be up: `podman machine start`. Compose files stay Docker-compatible.
+- Plan and task order: `docs/plans/2026-10-03-ratekit-plan.md`.
+
+## Read when relevant
+
+- What each docs path holds: `docs/README.md`
+- Landscape, stack options, risks, open questions: `docs/research/2026-10-03-kickoff.md`

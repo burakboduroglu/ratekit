@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Add project-specific checks here. Keep this hook generic and dependency-free.
+exit 0
