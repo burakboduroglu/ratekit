@@ -13,6 +13,13 @@ public class AccountRepository {
         this.jdbc = jdbc;
     }
 
+    public boolean exists(String accountId) {
+        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM accounts WHERE id = ?)")
+                .param(accountId)
+                .query(Boolean.class)
+                .single();
+    }
+
     /**
      * Takes {@code amount} from the balance only if the account can afford it.
      *

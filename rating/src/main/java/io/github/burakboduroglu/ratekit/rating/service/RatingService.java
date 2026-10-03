@@ -5,6 +5,7 @@ import io.github.burakboduroglu.ratekit.rating.domain.BillingPeriod;
 import io.github.burakboduroglu.ratekit.rating.domain.Charge;
 import io.github.burakboduroglu.ratekit.rating.domain.Rater;
 import io.github.burakboduroglu.ratekit.rating.domain.TariffBook;
+import io.github.burakboduroglu.ratekit.rating.exception.UnknownAccountException;
 import io.github.burakboduroglu.ratekit.rating.repository.AccountRepository;
 import io.github.burakboduroglu.ratekit.rating.repository.ChargeRepository;
 import io.github.burakboduroglu.ratekit.rating.repository.ProcessedEventRepository;
@@ -19,7 +20,8 @@ import org.springframework.transaction.annotation.Transactional;
  * Rates one usage event, at most once, and takes the charge from the prepaid balance.
  *
  * <p>Everything runs in a single transaction: if rating fails (unknown account, no tariff), the
- * "processed" record is rolled back too, so the event is not lost and can be retried. An event the
+ * "processed" record is rolled back too, so the event is not lost; the Kafka error handler then retries
+ * transient failures and dead-letters permanent ones (see {@code config.ConsumerErrorHandlingConfig}). An event the
  * account cannot afford is not a failure: it is recorded as rejected and stays processed.
  */
 @Service
@@ -47,6 +49,9 @@ public class RatingService {
 
     @Transactional
     public Outcome handle(UsageEvent event) {
+        if (!accounts.exists(event.accountId())) {
+            throw new UnknownAccountException(event.accountId());
+        }
         if (!processed.markProcessed(event.accountId(), event.eventId())) {
             log.info("duplicate event ignored: account={} event={}", event.accountId(), event.eventId());
             return Outcome.DUPLICATE;

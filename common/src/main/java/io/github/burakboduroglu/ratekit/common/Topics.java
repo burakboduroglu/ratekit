@@ -5,6 +5,9 @@ public final class Topics {
 
     public static final String USAGE_EVENTS = "usage-events";
 
+    /** Events that could not be processed, kept with the reason so they can be inspected and replayed. */
+    public static final String USAGE_EVENTS_DLQ = "usage-events.dlq";
+
     private Topics() {
     }
 }

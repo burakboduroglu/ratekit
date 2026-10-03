@@ -22,3 +22,12 @@ spring:
         spring.json.value.default.type: io.github.burakboduroglu.ratekit.common.UsageEvent
         spring.json.use.type.headers: false
         spring.json.trusted.packages: io.github.burakboduroglu.ratekit.common
+
+ratekit:
+  rating:
+    retry:
+      # transient failures are retried this many times with growing pauses, then dead-lettered
+      max-retries: 4
+      initial-interval-ms: 500
+      multiplier: 2.0
+      max-interval-ms: 5000
