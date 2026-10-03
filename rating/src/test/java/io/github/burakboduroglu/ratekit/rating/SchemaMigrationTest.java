@@ -17,7 +17,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 /** Applies the Flyway migrations to a clean PostgreSQL and proves the safety constraints hold. */
-@SpringBootTest
+// no Kafka container here: keep the listener from connecting to whatever runs on localhost:9092
+@SpringBootTest(properties = "spring.kafka.listener.auto-startup=false")
 @Testcontainers
 class SchemaMigrationTest {
 
