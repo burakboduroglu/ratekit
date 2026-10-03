@@ -18,6 +18,7 @@ Open-source usage metering and rating engine. Learning project: Java 21, Spring 
 
 - JDK 21 is keg-only. Set it per shell before Maven: `export JAVA_HOME=/opt/homebrew/opt/openjdk@21`. The system default is JDK 25, which is not the target.
 - Build and test: `mvn -B verify` from the repo root.
+- Testcontainers on Podman: run Maven with `DOCKER_HOST=unix:///var/run/docker.sock` (the Podman VM exposes the Docker API there). Verified on 2026-10-03; Ryuk needed no extra setting.
 - Containers run on Podman (no Docker). The VM must be up: `podman machine start`. Compose files stay Docker-compatible.
 - Plan and task order: `docs/plans/2026-10-03-ratekit-plan.md`.
 
