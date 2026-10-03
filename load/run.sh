@@ -19,7 +19,7 @@ psql_q() { $COMPOSE exec -T postgres psql -U ratekit -d ratekit -tA "$@" 2>/dev/
 echo "== seeding 200 accounts and one tariff (this empties the charge tables)"
 $COMPOSE exec -T postgres psql -U ratekit -d ratekit < load/seed-load.sql > /dev/null
 
-dashboard=()
+dashboard=()   # may stay empty; the ${...+...} form below keeps old bash (macOS) happy under set -u
 if [ "${DASHBOARD:-0}" = "1" ]; then
   dashboard=(-p 5665:5665 -e K6_WEB_DASHBOARD=true -e K6_WEB_DASHBOARD_HOST=0.0.0.0 -e K6_WEB_DASHBOARD_PORT=5665)
   echo "== live dashboard: http://localhost:5665 (available while k6 runs)"
@@ -27,7 +27,7 @@ fi
 
 echo "== k6: rates $RATES, ${STAGE_SECONDS}s per stage"
 start=$(date +%s)
-$CONTAINER run --rm -i --network "$NETWORK" --memory 300m "${dashboard[@]}" \
+$CONTAINER run --rm -i --network "$NETWORK" --memory 300m ${dashboard[@]+"${dashboard[@]}"} \
   -e TARGET=http://ingest:8081 -e RUN="$RUN" -e STAGE_SECONDS="$STAGE_SECONDS" -e RATES="$RATES" \
   docker.io/grafana/k6:2.3.0 run - < load/k6/ingest.js | tee /tmp/ratekit-k6.log
 end=$(date +%s)
