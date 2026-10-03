@@ -79,6 +79,7 @@ Invoicing is a separate step. When a month has ended, `POST /v1/invoice-runs` on
 | 12 | **Documented API** | OpenAPI spec and Swagger UI generated from the code. |
 | 13 | **Tested against the real thing** | Integration tests run against real Kafka and PostgreSQL containers via Testcontainers. |
 | 14 | **Layered code, one job per class** | Controller, service, repository, mapper, DTO and config each live in their own package; see [Code structure](#code-structure) and [ADR 0003](docs/adr/0003-package-structure.md). |
+| 15 | **One command, whole stack** | `docker compose up -d --build` builds three small images (multi-stage, JRE only, non-root user) and starts PostgreSQL, Kafka and the services in dependency order, each with a health check. See [`docs/specs/local-dev.md`](docs/specs/local-dev.md). |
 
 ## API
 
@@ -113,39 +114,47 @@ Amounts are decimal strings with four digits (`"0.2500"`) so no client rounds th
 
 ## Quick start
 
-Requires JDK 21, Maven 3.9+ and a container runtime with Compose (Docker or Podman).
+Requires a container runtime with Compose (Docker or Podman). To build and test from source you also need JDK 21 and Maven 3.9+.
+
+**Everything in containers** (PostgreSQL, Kafka and the three services, built from source):
 
 ```sh
-# 1. Start PostgreSQL and Kafka
-docker compose up -d                  # or: podman compose up -d
+# 1. Start the stack (the first build takes a few minutes)
+docker compose up -d --build          # or: podman compose up -d --build
 
-# 2. Build and test everything
-mvn -B verify
-
-# 3. Run the three services (separate terminals)
-java -jar ingest/target/ingest-0.1.0-SNAPSHOT.jar
-java -jar rating/target/rating-0.1.0-SNAPSHOT.jar
-java -jar billing/target/billing-0.1.0-SNAPSHOT.jar
-
-# 4. Create a demo account and tariff (100 free SMS a month, then 0.05 each)
+# 2. Create a demo account and tariff (100 free SMS a month, then 0.05 each)
 docker compose exec -T postgres psql -U ratekit -d ratekit < scripts/seed-demo.sql
 
-# 5. Send events
+# 3. Send events
 curl -X POST localhost:8081/v1/events -H 'Content-Type: application/json' \
   -d '{"eventId":"e-1","accountId":"acc-demo","meter":"sms","quantity":95,"occurredAt":"2026-09-15T10:00:00Z"}'
 curl -X POST localhost:8081/v1/events -H 'Content-Type: application/json' \
   -d '{"eventId":"e-2","accountId":"acc-demo","meter":"sms","quantity":10,"occurredAt":"2026-09-15T11:00:00Z"}'
 
-# 6. Look at the charges: e-1 is free, e-2 pays for the 5 units over the quota
+# 4. Look at the charges: e-1 is free, e-2 pays for the 5 units over the quota
 docker compose exec -T postgres psql -U ratekit -d ratekit \
   -c "SELECT event_id, quantity, amount FROM charges ORDER BY id;"
 
-# 7. Invoice September (the month must have ended), then read the invoice
+# 5. Invoice September (the month must have ended), then read the invoice
 curl -X POST localhost:8083/v1/invoice-runs -H 'Content-Type: application/json' -d '{"period":"2026-09"}'
 curl "localhost:8083/v1/invoices/acc-demo?period=2026-09"
 ```
 
-The invoice shows one `sms` line of 105 units and a total of `0.2500`. Running step 7 again creates nothing: `{"invoicesCreated":0,"alreadyInvoiced":1}`.
+The invoice shows one `sms` line of 105 units and a total of `0.2500`. Running step 5 again creates nothing: `{"invoicesCreated":0,"alreadyInvoiced":1}`. Sending the same `eventId` twice produces one charge. Stop everything with `docker compose down`.
+
+**Services on the host** (to debug in an IDE): start only the infrastructure, build, and run the jars in separate terminals. The demo steps above work unchanged.
+
+```sh
+docker compose up -d postgres kafka
+mvn -B verify
+java -jar ingest/target/ingest-0.1.0-SNAPSHOT.jar
+java -jar rating/target/rating-0.1.0-SNAPSHOT.jar
+java -jar billing/target/billing-0.1.0-SNAPSHOT.jar
+```
+
+`rating` creates its own schema on first start (Flyway), and `billing` adds its two tables next to it with a separate history table; in the container setup `billing` waits for `rating` to be healthy for that reason.
+
+**Memory:** the full stack needs about 1.7 GB. The default Podman VM has 2 GB, so stop the stack (`compose down`) before `mvn verify`, whose integration tests start their own Kafka and PostgreSQL, or give the VM more (`podman machine set --memory 4096`). Details in [`docs/specs/local-dev.md`](docs/specs/local-dev.md).
 
 To see what could not be processed, read the dead-letter topic (each record carries the original topic, partition, offset and the exception in its headers):
 
@@ -155,9 +164,7 @@ docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh \
   --formatter-property print.key=true --formatter-property print.headers=true
 ```
 
-`rating` creates its own schema on first start (Flyway), and `billing` adds its two tables next to it with a separate history table. Start both before step 4, which needs the tables. Sending the same `eventId` twice produces one charge.
-
-**Podman:** the integration tests use Testcontainers. Point it at the Podman API socket:
+**Podman and the tests:** the integration tests use Testcontainers. Point it at the Podman API socket:
 
 ```sh
 DOCKER_HOST=unix:///var/run/docker.sock mvn -B verify
@@ -184,15 +191,16 @@ Compose services and their pinned images are described in [`docs/specs/local-dev
 
 | Done | Next |
 | --- | --- |
-| Maven multi-module build | Dockerfiles for all services |
-| PostgreSQL and Kafka via Compose | GitHub Actions CI/CD |
-| Event contract and money rules | Load test and observability |
+| Maven multi-module build | GitHub Actions CI/CD |
+| PostgreSQL and Kafka via Compose | Load test and observability |
+| Event contract and money rules | |
 | `ingest` with OpenAPI | |
 | Versioned tariffs and three price models | |
 | `rating` consumer, idempotent, with charges stored | |
 | Prepaid hard stop, atomic and concurrency-safe | |
 | Retry with backoff and a dead-letter topic | |
 | `billing`: idempotent monthly invoices | |
+| Dockerfile and a one-command stack | |
 
 Known limits today: a transient failure can hold up its partition for up to 7.5 seconds (configurable). Dead letters are inspected and replayed by hand. Events that arrive out of order are rated in arrival order. Rejections for insufficient balance are not reported back to the sender, who already received `202`. A charge rated after its month was invoiced is not added to that invoice (an issued invoice is never rewritten). `billing` reads `rating`'s `charges` table directly, so the two services share a database. An invoice run is synchronous.
 
@@ -344,6 +352,7 @@ rating/    Kafka consumer, tariff domain, persistence, Flyway migrations
 billing/   monthly invoicing: REST, scheduler, own Flyway tables
 docs/      research, implementation plan, ADRs, specs
 scripts/   demo data
+Dockerfile  one parameterised multi-stage build for all three services
 compose.yaml
 ```
 

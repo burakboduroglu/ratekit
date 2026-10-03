@@ -1,0 +1,10 @@
+**/target/
+.git/
+.idea/
+.vscode/
+*.iml
+docs/
+scripts/
+assets/
+compose.yaml
+Dockerfile
