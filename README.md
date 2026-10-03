@@ -17,11 +17,11 @@
 
 ratekit takes a stream of usage events (an SMS sent, a megabyte used, a minute called), decides what each one costs under the tariff that applied at that moment, and records the charge. It is the core of a prepaid charging and billing system, kept small enough to read in an afternoon.
 
-> **Status: early development.** Ingest and rating work end to end. Prepaid balance deduction, retry and dead-letter handling, invoicing, container images and CI are still to come; see [Status](#status).
+> **Status: early development.** Ingest, rating and prepaid balance deduction work end to end. Retry and dead-letter handling, invoicing, container images and CI are still to come; see [Status](#status).
 
 ## What it is
 
-An event enters through a REST endpoint and is written to Kafka. A rating service reads it, prices it against versioned tariffs and stores the charge in PostgreSQL. The pieces are separate services so each can scale and fail on its own, and Kafka sits between them so a slow or restarted service never loses an event.
+An event enters through a REST endpoint and is written to Kafka. A rating service reads it, prices it against versioned tariffs, takes the charge from the account's prepaid balance and stores it in PostgreSQL. The pieces are separate services so each can scale and fail on its own, and Kafka sits between them so a slow or restarted service never loses an event.
 
 ```
  usage source
@@ -52,7 +52,7 @@ An event enters through a REST endpoint and is written to Kafka. A rating servic
 | --- | --- | --- | --- |
 | `common` | Shared library | The event contract (`UsageEvent`), the money rules (`Money`) and topic names. Plain Java, no Spring, so every service agrees on the same types and the same rounding. | none |
 | `ingest` | Producer, the front door | `POST /v1/events` validates an event and writes it to Kafka, keyed by account. Answers `202` only after Kafka has acknowledged the write. Serves the OpenAPI spec and Swagger UI. | 8081 |
-| `rating` | Consumer, the pricing core | Reads events from Kafka, skips duplicates, finds the tariff version in force at the event's time, computes the charge and stores it. Owns the database schema. | 8082 |
+| `rating` | Consumer, the pricing core | Reads events from Kafka, skips duplicates, finds the tariff version in force at the event's time, computes the charge, deducts it from the prepaid balance and stores it. Refuses events the account cannot afford. Owns the database schema. | 8082 |
 | `billing` | Invoicing | Will turn a period's charges into invoices. Currently an empty Spring Boot skeleton. | 8083 (planned) |
 
 ## How an event flows
@@ -63,7 +63,7 @@ An event enters through a REST endpoint and is written to Kafka. A rating servic
 4. Kafka stores the event in one partition. All events of one account share a partition, so they are read in order, while different accounts are processed in parallel.
 5. `rating` reads the event and tries to record `(accountId, eventId)` in `processed_events`. If that row already exists the event is a redelivery and is skipped.
 6. Otherwise `rating` loads the tariff versions for the meter, picks the one in force at `occurredAt`, adds up what the account already used this month, and prices the event.
-7. The charge is stored. Steps 5 to 7 run in one database transaction, so a failure leaves no half-processed event behind.
+7. `rating` deducts the charge from the account's balance in one atomic statement. If the balance is too low the event is recorded as rejected and nothing is charged; otherwise the charge is stored. Steps 5 to 7 run in one database transaction, so a failure leaves no half-processed event behind.
 
 ## Highlights
 
@@ -75,10 +75,11 @@ An event enters through a REST endpoint and is written to Kafka. A rating servic
 | 4 | **Three price models** | Flat, graduated tiers, and a free quota followed by a flat rate. Each is a strategy behind one `PriceModel` interface. |
 | 5 | **Usage accumulates across events** | Free quotas and tiers count the whole calendar month (UTC), so an event that crosses a quota or a tier boundary is split correctly. |
 | 6 | **Exact money** | `BigDecimal` only, scale 4, half-even rounding, rounded once per charge. Unit prices keep full precision. See [ADR 0001](docs/adr/0001-money-and-rounding.md). |
-| 7 | **Safety lives in the database** | `CHECK (balance >= 0)`, unique and foreign keys reject bad data even if application code is wrong. |
-| 8 | **Framework-free domain** | The pricing logic has no Spring, Kafka or JDBC imports; a test fails the build if one appears. |
-| 9 | **Documented API** | OpenAPI spec and Swagger UI generated from the code. |
-| 10 | **Tested against the real thing** | Integration tests run against real Kafka and PostgreSQL containers via Testcontainers. |
+| 7 | **Prepaid hard stop, safe under concurrency** | One `UPDATE ... WHERE balance >= x` checks and deducts in a single step, so racing events can never overspend a balance. A test fires 60 events at a balance that fits 10: exactly 10 are accepted. See [ADR 0002](docs/adr/0002-balance-deduction.md). |
+| 8 | **Safety lives in the database** | `CHECK (balance >= 0)`, unique and foreign keys reject bad data even if application code is wrong. |
+| 9 | **Framework-free domain** | The pricing logic has no Spring, Kafka or JDBC imports; a test fails the build if one appears. |
+| 10 | **Documented API** | OpenAPI spec and Swagger UI generated from the code. |
+| 11 | **Tested against the real thing** | Integration tests run against real Kafka and PostgreSQL containers via Testcontainers. |
 
 ## API
 
@@ -152,17 +153,19 @@ Compose services and their pinned images are described in [`docs/specs/local-dev
 | Database schema | Duplicate events, negative balances and orphan charges are rejected by constraints |
 | Ingest | `202` with the event in Kafka, same account in the same partition, `400` on invalid input, OpenAPI served |
 | Rating | An event becomes one charge, a redelivery is rated once, quota is shared across events and resets monthly, the version at event time is used, a failing event leaves no trace |
+| Balance | An affordable event is deducted, an exact-balance event leaves zero, an unaffordable one is rejected and recorded, a free event passes with an empty balance, a rejected event is not revived by a redelivery, 60 racing events never overspend |
 
 ## Status
 
 | Done | Next |
 | --- | --- |
-| Maven multi-module build | Prepaid balance deduction that is safe under concurrency |
-| PostgreSQL and Kafka via Compose | Bounded retries and a dead-letter topic |
-| Event contract and money rules | Invoice run in `billing` |
-| `ingest` with OpenAPI | Dockerfiles for all services |
-| Versioned tariffs and three price models | GitHub Actions CI/CD |
-| `rating` consumer, idempotent, with charges stored | Load test and observability |
+| Maven multi-module build | Bounded retries and a dead-letter topic |
+| PostgreSQL and Kafka via Compose | Invoice run in `billing` |
+| Event contract and money rules | Dockerfiles for all services |
+| `ingest` with OpenAPI | GitHub Actions CI/CD |
+| Versioned tariffs and three price models | Load test and observability |
+| `rating` consumer, idempotent, with charges stored | |
+| Prepaid hard stop, atomic and concurrency-safe | |
 
 Known limits today: a failing event is retried for a few seconds, holds up its partition meanwhile, and is then dropped with only a log line (fixed by the dead-letter work). Events that arrive out of order are rated in arrival order.
 

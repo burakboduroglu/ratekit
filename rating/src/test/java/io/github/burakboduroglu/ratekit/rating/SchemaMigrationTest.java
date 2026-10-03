@@ -34,7 +34,8 @@ class SchemaMigrationTest {
         List<String> tables = jdbc.queryForList(
                 "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'", String.class);
 
-        assertThat(tables).contains("accounts", "tariffs", "processed_events", "charges", "flyway_schema_history");
+        assertThat(tables).contains("accounts", "tariffs", "processed_events", "charges", "rejected_events",
+                "flyway_schema_history");
     }
 
     @Test
@@ -122,6 +123,19 @@ class SchemaMigrationTest {
         String sql = "INSERT INTO charges (account_id, event_id, meter, quantity, amount, tariff_id, occurred_at) "
                 + "VALUES ('acc-ok', 'e1', 'voice-min', 2, 0.1000, " + tariffId + ", now())";
 
+        assertThat(jdbc.update(sql)).isEqualTo(1);
+        assertThatThrownBy(() -> jdbc.update(sql)).isInstanceOf(DuplicateKeyException.class);
+    }
+
+    @Test
+    void aRejectedEventNeedsAProcessedEventAndIsRecordedOnce() {
+        account("acc-rej");
+        String sql = "INSERT INTO rejected_events (account_id, event_id, meter, quantity, amount, reason, occurred_at) "
+                + "VALUES ('acc-rej', 'e1', 'sms', 1, 1, 'INSUFFICIENT_BALANCE', now())";
+
+        assertThatThrownBy(() -> jdbc.update(sql)).isInstanceOf(DataIntegrityViolationException.class);
+
+        jdbc.update("INSERT INTO processed_events (account_id, event_id) VALUES ('acc-rej', 'e1')");
         assertThat(jdbc.update(sql)).isEqualTo(1);
         assertThatThrownBy(() -> jdbc.update(sql)).isInstanceOf(DuplicateKeyException.class);
     }
