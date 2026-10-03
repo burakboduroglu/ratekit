@@ -9,6 +9,7 @@ Open-source usage metering and rating engine. Learning project: Java 21, Spring 
 - To-dos, status and project decisions live in this repo (`docs/`), not in the vault.
 - The owner is learning the architecture: go one step at a time, explain the why of each decision, and wait for review before the next step.
 - Delivery semantics are at-least-once plus idempotent consumers. Never claim exactly-once.
+- Code is layered per service: `controller`, `dto`, `mapper`, `service`, `repository`, `messaging`, `config`, `exception`; pricing rules live in a framework-free `domain` package (a test enforces it). One class, one job. New code follows this layout (`docs/adr/0003-package-structure.md`).
 - Money uses `BigDecimal` with an explicit rounding rule, never `double`.
 - Balance model is prepaid with a hard stop: an event that exceeds the balance is rejected.
 - License is Apache-2.0.
