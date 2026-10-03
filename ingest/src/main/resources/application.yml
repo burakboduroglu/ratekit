@@ -11,3 +11,13 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       properties:
         enable.idempotence: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # only what operators need; nothing that changes state
+        include: health,info,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}

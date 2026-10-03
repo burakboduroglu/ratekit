@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 
 import io.github.burakboduroglu.ratekit.common.Topics;
 import io.github.burakboduroglu.ratekit.common.UsageEvent;
+import io.micrometer.core.instrument.MeterRegistry;
 import io.github.burakboduroglu.ratekit.rating.service.RatingService;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -76,6 +77,9 @@ class DeadLetterIntegrationTest {
     @Autowired
     JdbcTemplate jdbc;
 
+    @Autowired
+    MeterRegistry meters;
+
     @MockitoSpyBean
     RatingService rating;
 
@@ -92,6 +96,8 @@ class DeadLetterIntegrationTest {
         ConsumerRecord<String, String> dead = awaitDeadLetter("bad");
         assertThat(dead.key()).isEqualTo(ghost);
         assertThat(causeOf(dead)).endsWith("UnknownAccountException");
+        assertThat(meters.get("ratekit.events.dead_lettered").tag("cause", "UnknownAccountException").counter().count())
+                .isGreaterThanOrEqualTo(1.0);
         assertThat(header(dead, KafkaHeaders.DLT_ORIGINAL_TOPIC)).isEqualTo(Topics.USAGE_EVENTS);
         verify(rating, times(1)).handle(argThat(e -> e != null && e.eventId().equals("bad"))); // never retried
     }

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import io.github.burakboduroglu.ratekit.common.Topics;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.UUID;
@@ -53,6 +54,9 @@ class RatingPipelineIntegrationTest {
     @Autowired
     JdbcTemplate jdbc;
 
+    @Autowired
+    MeterRegistry meters;
+
     @Test
     void aNewEventBecomesOneCharge() {
         String account = account();
@@ -63,6 +67,26 @@ class RatingPipelineIntegrationTest {
         awaitCharge(account, "e1");
         assertThat(chargeAmount(account, "e1")).isEqualByComparingTo("0.1500");
         assertThat(count("processed_events", account)).isEqualTo(1);
+    }
+
+    @Test
+    void everyOutcomeAndTheProcessingTimeAreCountedInTheMetrics() {
+        String account = account();
+        String meter = flatTariff("0.05");
+        double ratedBefore = processed("rated");
+        double duplicateBefore = processed("duplicate");
+        long timedBefore = meters.get("ratekit.rating.duration").timer().count();
+
+        send(account, "m1", meter, 1, "2026-10-03T10:00:00Z");
+        send(account, "m1", meter, 1, "2026-10-03T10:00:00Z"); // redelivery
+        send(account, "m2", meter, 1, "2026-10-03T10:00:01Z");
+
+        awaitCharge(account, "m2");
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
+            assertThat(processed("rated")).isGreaterThanOrEqualTo(ratedBefore + 2);
+            assertThat(processed("duplicate")).isGreaterThanOrEqualTo(duplicateBefore + 1);
+            assertThat(meters.get("ratekit.rating.duration").timer().count()).isGreaterThanOrEqualTo(timedBefore + 3);
+        });
     }
 
     @Test
@@ -155,6 +179,10 @@ class RatingPipelineIntegrationTest {
     }
 
     // ---- helpers ----
+
+    private double processed(String outcome) {
+        return meters.get("ratekit.events.processed").tag("outcome", outcome).counter().count();
+    }
 
     private String account() {
         String id = "acc-" + UUID.randomUUID();

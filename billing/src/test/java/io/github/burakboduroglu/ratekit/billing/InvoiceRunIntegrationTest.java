@@ -11,6 +11,7 @@ import io.github.burakboduroglu.ratekit.billing.exception.PeriodNotClosedExcepti
 import io.github.burakboduroglu.ratekit.billing.service.InvoiceRunService;
 import io.github.burakboduroglu.ratekit.billing.service.InvoiceRunService.RunSummary;
 import io.github.burakboduroglu.ratekit.billing.service.InvoiceService;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.YearMonth;
@@ -25,6 +26,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.actuate.observability.AutoConfigureObservability;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.client.TestRestTemplate;
@@ -47,6 +49,8 @@ import org.testcontainers.utility.DockerImageName;
  * closed and June 2027 is still open. Each test uses its own month, so tests cannot see each
  * other's charges.
  */
+// @SpringBootTest switches metric export off; turn it on to test the Prometheus endpoint
+@AutoConfigureObservability
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "spring.flyway.locations=classpath:db/billing,classpath:db/billing-test",
         "ratekit.billing.batch-size=2"})
@@ -77,6 +81,9 @@ class InvoiceRunIntegrationTest {
 
     @Autowired
     TestRestTemplate http;
+
+    @Autowired
+    MeterRegistry meters;
 
     private static BillingPeriod month(int year, int month) {
         return BillingPeriod.of(YearMonth.of(year, month));
@@ -254,6 +261,26 @@ class InvoiceRunIntegrationTest {
                 .isEqualTo(HttpStatus.NOT_FOUND);
         assertThat(http.getForEntity("/v1/invoices/nobody?period=oops", String.class).getStatusCode())
                 .isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void invoiceRunsAreCountedAndActuatorIsExposed() {
+        String a = id("metric");
+        charge(a, "sms", 1, "0.05", "2026-12-10T10:00:00Z");
+        double createdBefore = meters.get("ratekit.invoices").tag("result", "created").counter().count();
+        double skippedBefore = meters.get("ratekit.invoices").tag("result", "already_invoiced").counter().count();
+
+        RunSummary first = runs.run(month(2026, 12));
+        RunSummary second = runs.run(month(2026, 12));
+
+        assertThat(meters.get("ratekit.invoices").tag("result", "created").counter().count() - createdBefore)
+                .isEqualTo(first.created() + second.created());
+        assertThat(meters.get("ratekit.invoices").tag("result", "already_invoiced").counter().count() - skippedBefore)
+                .isEqualTo(first.alreadyInvoiced() + second.alreadyInvoiced());
+        assertThat(first.created()).isEqualTo(1);
+        assertThat(http.getForEntity("/actuator/health", String.class).getBody()).contains("UP");
+        assertThat(http.getForEntity("/actuator/prometheus", String.class).getBody())
+                .contains("ratekit_invoices_total").contains("application=\"ratekit-billing\"");
     }
 
     @Test

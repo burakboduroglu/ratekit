@@ -31,3 +31,13 @@ ratekit:
       initial-interval-ms: 500
       multiplier: 2.0
       max-interval-ms: 5000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # only what operators need; nothing that changes state
+        include: health,info,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}

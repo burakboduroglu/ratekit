@@ -17,6 +17,7 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.actuate.observability.AutoConfigureObservability;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -27,6 +28,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
+// @SpringBootTest switches metric export off; turn it on to test the Prometheus endpoint
+@AutoConfigureObservability
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Testcontainers
 class EventIngestIntegrationTest {
@@ -90,6 +93,23 @@ class EventIngestIntegrationTest {
         ResponseEntity<String> response = http.postForEntity("/v1/events", jsonRequest(body), String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void actuatorExposesHealthAndTheAcceptedEventCounterButNothingThatChangesState() {
+        String body = """
+                {"eventId":"metrics-1","accountId":"acc-metrics","meter":"sms","quantity":1,"occurredAt":"2026-10-03T10:00:00Z"}""";
+        assertThat(http.postForEntity("/v1/events", jsonRequest(body), Void.class).getStatusCode())
+                .isEqualTo(HttpStatus.ACCEPTED);
+
+        ResponseEntity<String> health = http.getForEntity("/actuator/health", String.class);
+        String metrics = http.getForEntity("/actuator/prometheus", String.class).getBody();
+
+        assertThat(health.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(health.getBody()).contains("UP");
+        assertThat(metrics).contains("ratekit_events_accepted_total").contains("application=\"ratekit-ingest\"");
+        assertThat(http.getForEntity("/actuator/env", String.class).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(http.getForEntity("/actuator/heapdump", String.class).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
 
     @Test

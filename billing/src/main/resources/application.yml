@@ -25,3 +25,13 @@ ratekit:
       enabled: false
       # 02:00 UTC on the first day of the month, invoicing the month that just ended
       cron: "0 0 2 1 * *"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # only what operators need; nothing that changes state
+        include: health,info,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}

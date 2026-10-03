@@ -7,6 +7,8 @@ import io.github.burakboduroglu.ratekit.billing.domain.InvoiceLine;
 import io.github.burakboduroglu.ratekit.billing.exception.PeriodNotClosedException;
 import io.github.burakboduroglu.ratekit.billing.repository.ChargeUsageRepository;
 import io.github.burakboduroglu.ratekit.billing.repository.UsageRow;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -37,19 +39,24 @@ public class InvoiceRunService {
     private final InvoiceService invoices;
     private final BillingProperties properties;
     private final Clock clock;
+    private final Counter created;
+    private final Counter skipped;
 
-    public InvoiceRunService(ChargeUsageRepository usage, InvoiceService invoices, BillingProperties properties, Clock clock) {
+    public InvoiceRunService(ChargeUsageRepository usage, InvoiceService invoices, BillingProperties properties,
+                             Clock clock, MeterRegistry meters) {
         this.usage = usage;
         this.invoices = invoices;
         this.properties = properties;
         this.clock = clock;
+        this.created = Counter.builder("ratekit.invoices").description("Invoice run results").tag("result", "created").register(meters);
+        this.skipped = Counter.builder("ratekit.invoices").description("Invoice run results").tag("result", "already_invoiced").register(meters);
     }
 
     public RunSummary run(BillingPeriod period) {
         if (period.end().isAfter(clock.instant())) {
             throw new PeriodNotClosedException(period);
         }
-        int created = 0;
+        int createdNow = 0;
         int alreadyInvoiced = 0;
         String after = "";
         while (true) {
@@ -61,15 +68,17 @@ public class InvoiceRunService {
             for (String account : accounts) {
                 Invoice invoice = Invoice.of(account, period, linesByAccount.get(account));
                 if (invoices.create(invoice)) {
-                    created++;
+                    createdNow++;
                 } else {
                     alreadyInvoiced++;
                 }
             }
             after = accounts.get(accounts.size() - 1);
         }
-        log.info("invoice run for {}: {} created, {} already invoiced", period.month(), created, alreadyInvoiced);
-        return new RunSummary(period, created, alreadyInvoiced);
+        created.increment(createdNow);
+        skipped.increment(alreadyInvoiced);
+        log.info("invoice run for {}: {} created, {} already invoiced", period.month(), createdNow, alreadyInvoiced);
+        return new RunSummary(period, createdNow, alreadyInvoiced);
     }
 
     private static Map<String, List<InvoiceLine>> linesByAccount(List<UsageRow> rows) {
