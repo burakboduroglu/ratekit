@@ -39,6 +39,6 @@ The alternatives are compared with measurements in the load-test task, not by op
 ## Consequences
 
 - The check and the deduction cannot be separated by another transaction, whatever the number of consumer instances.
-- A very busy single account serializes on its row lock. Accepted for now; measured later.
+- A very busy single account serializes on its row lock. Measured (`docs/perf.md`, 16 threads on one hot account): the atomic statement did 13,773 updates per second, `SELECT FOR UPDATE` 1,748 and optimistic locking 1,299 with about 46 retries per success. With 200 accounts the figures were 20,736, 7,032 and 10,651.
 - This protects the balance only. Free-quota and tier usage is summed from `charges` before the deduction, so two events of the same account and meter running at the same instant could both see the same usage. Today this is prevented by Kafka's per-account ordering (the account is the message key, one consumer per partition), not by the database. Locking the account row at the start of processing would close the gap and is the first thing to evaluate if more concurrency is needed.
 - Rejection is silent to the sender (the event was already accepted with 202). Surfacing rejections to clients is out of scope.

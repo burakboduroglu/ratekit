@@ -82,6 +82,7 @@ Invoicing is a separate step. When a month has ended, `POST /v1/invoice-runs` on
 | 14 | **Layered code, one job per class** | Controller, service, repository, mapper, DTO and config each live in their own package; see [Code structure](#code-structure) and [ADR 0003](docs/adr/0003-package-structure.md). |
 | 15 | **One command, whole stack** | `docker compose up -d --build` builds three small images (multi-stage, JRE only, non-root user) and starts PostgreSQL, Kafka and the services in dependency order, each with a health check. See [`docs/specs/local-dev.md`](docs/specs/local-dev.md). |
 | 16 | **CI on every push and pull request** | GitHub Actions builds and runs all unit and integration tests (real Kafka and PostgreSQL via Testcontainers), then builds the three service images in parallel. Images are built, not published. See [`.github/workflows/ci.yml`](.github/workflows/ci.yml). |
+| 17 | **Observable and measured** | Every service exposes health and Prometheus metrics (events by outcome, rating time per event as a histogram, dead letters by cause, invoices). Performance claims come from a k6 load test and are in [`docs/perf.md`](docs/perf.md), with the machine and the limits stated. See [ADR 0006](docs/adr/0006-metrics.md). |
 
 ## API
 
@@ -202,13 +203,37 @@ Every push to `main` and every pull request runs [`.github/workflows/ci.yml`](.g
 
 </div>
 
+## Observability and performance
+
+Each service serves `/actuator/health` and Prometheus-format metrics at `/actuator/prometheus` on its own port (`8081`, `8082`, `8083`). Nothing that reveals configuration or changes state is exposed.
+
+| Metric | Service | Meaning |
+| --- | --- | --- |
+| `ratekit_events_accepted_total` | ingest | events written to Kafka and acknowledged |
+| `ratekit_events_processed_total{outcome}` | rating | rated, rejected (no balance) or duplicate |
+| `ratekit_rating_duration_seconds` | rating | time per event including the database commit, as a histogram |
+| `ratekit_events_dead_lettered_total{cause}` | rating | records given up on, by root cause |
+| `ratekit_invoices_total{result}` | billing | invoices created or skipped as already issued |
+| `kafka_consumer_fetch_manager_records_lag_max` | rating | how far behind the consumer is |
+
+A k6 load test (`load/run.sh`) drove ingest on one laptop, with everything including the load generator sharing a 4 CPU, 2 GB virtual machine, so the numbers describe that setup and not production:
+
+| | One consumer thread | Three consumer threads |
+| --- | --- | --- |
+| Load | 1500 requests/s for 45 s | 1500 requests/s for 45 s |
+| Rating time per event (mean) | 1.0 ms | 2.9 ms |
+| Max consumer lag | 4,113 records | 429 records |
+| Events accepted | 55,477 | 45,989 |
+
+One rating thread handles about 1000 events per second. More threads cut the lag but did not raise total throughput on this shared machine. Atomic balance deduction was 8 times faster than `SELECT FOR UPDATE` on a single hot account. A run that exhausted the VM's memory killed Kafka; after a restart every one of the 34,975 messages in the topic had been rated, none lost. Details, caveats and what was not measured are in [`docs/perf.md`](docs/perf.md).
+
 ## Status
 
 | Done | Next |
 | --- | --- |
-| Maven multi-module build | Load test and observability |
-| PostgreSQL and Kafka via Compose | |
-| Event contract and money rules | |
+| Maven multi-module build | Prometheus and Grafana in Compose (needs more VM memory) |
+| PostgreSQL and Kafka via Compose | Longer soak and spike load tests |
+| Event contract and money rules | Publish the images to a registry |
 | `ingest` with OpenAPI | |
 | Versioned tariffs and three price models | |
 | `rating` consumer, idempotent, with charges stored | |
@@ -217,8 +242,9 @@ Every push to `main` and every pull request runs [`.github/workflows/ci.yml`](.g
 | `billing`: idempotent monthly invoices | |
 | Dockerfile and a one-command stack | |
 | GitHub Actions CI: build, test (Testcontainers), build the three images | |
+| Metrics, a k6 load test and measured results | |
 
-Known limits today: a transient failure can hold up its partition for up to 7.5 seconds (configurable). Dead letters are inspected and replayed by hand. Events that arrive out of order are rated in arrival order. Rejections for insufficient balance are not reported back to the sender, who already received `202`. A charge rated after its month was invoiced is not added to that invoice (an issued invoice is never rewritten). `billing` reads `rating`'s `charges` table directly, so the two services share a database. An invoice run is synchronous.
+Known limits today: a transient failure can hold up its partition for up to 7.5 seconds (configurable). Dead letters are inspected and replayed by hand. Events that arrive out of order are rated in arrival order. Rejections for insufficient balance are not reported back to the sender, who already received `202`. A charge rated after its month was invoiced is not added to that invoice (an issued invoice is never rewritten). `billing` reads `rating`'s `charges` table directly, so the two services share a database. An invoice run is synchronous. The full stack needs about 1.7 GB, which is nearly all of a default 2 GB Podman VM.
 
 ## Code structure
 
@@ -394,11 +420,12 @@ rating/    Kafka consumer, tariff domain, persistence, Flyway migrations
 billing/   monthly invoicing: REST, scheduler, own Flyway tables
 docs/      research, implementation plan, ADRs, specs
 scripts/   demo data
+load/      k6 load test, seed data and a runner script
 Dockerfile  one parameterised multi-stage build for all three services
 compose.yaml
 ```
 
-Design decisions are recorded as ADRs in [`docs/adr/`](docs/adr/): money and rounding, balance deduction, package structure, retry and dead-letter policy, invoicing. The implementation plan is in [`docs/plans/`](docs/plans/).
+Design decisions are recorded as ADRs in [`docs/adr/`](docs/adr/): money and rounding, balance deduction, package structure, retry and dead-letter policy, invoicing, metrics. The implementation plan is in [`docs/plans/`](docs/plans/).
 
 ## License
 

@@ -53,8 +53,13 @@ One `Dockerfile` at the repository root builds any service: `--build-arg SERVICE
 The default Podman VM has 2 GB. The whole stack needs about 1.7 GB there: Kafka ~350 MB with its heap capped at 384 MB (`KAFKA_HEAP_OPTS`), each Spring service ~230 MB (`MaxRAMPercentage=50`, `mem_limit: 512m`), PostgreSQL ~65 MB.
 
 - With the broker heap uncapped the stack did not fit: the VM ran out of memory and the kernel killed Kafka (exit code 137, SIGKILL), after which `ingest` answered `503`.
+- A load test needs headroom too: with three rating threads, k6's live dashboard and a 90 second run next to the full stack, the VM ran out of memory again and the kernel killed Kafka. Keep `billing` stopped during load tests (`podman compose up -d postgres kafka ingest rating`). See `docs/perf.md`.
 - **Do not run `mvn verify` while the stack is up:** Testcontainers starts a second Kafka and PostgreSQL and the VM will run out of memory. Run `podman compose down` first.
 - More room: `podman machine stop && podman machine set --memory 4096 && podman machine start` (not done here; it is a change to the VM, so it is yours to make).
+
+## Metrics and load test
+
+Each service exposes `/actuator/health` and `/actuator/prometheus` on its port (8081, 8082, 8083). `load/run.sh` drives ingest with k6 (run as a container, nothing to install) and reports how long rating needs to catch up; set `DASHBOARD=1` for k6's live charts on http://localhost:5665. Commands and results are in `docs/perf.md`. Rating's consumer threads are set with `RATING_CONCURRENCY` (default 1).
 
 ## Verify (as run on 2026-10-03)
 
