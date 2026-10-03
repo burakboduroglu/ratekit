@@ -3,7 +3,8 @@ package io.github.burakboduroglu.ratekit.rating;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.burakboduroglu.ratekit.common.UsageEvent;
-import io.github.burakboduroglu.ratekit.rating.RatingService.Outcome;
+import io.github.burakboduroglu.ratekit.rating.service.RatingService;
+import io.github.burakboduroglu.ratekit.rating.service.RatingService.Outcome;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;

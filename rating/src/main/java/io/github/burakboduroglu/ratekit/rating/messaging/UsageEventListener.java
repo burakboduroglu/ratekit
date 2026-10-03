@@ -2,7 +2,7 @@ package io.github.burakboduroglu.ratekit.rating.messaging;
 
 import io.github.burakboduroglu.ratekit.common.Topics;
 import io.github.burakboduroglu.ratekit.common.UsageEvent;
-import io.github.burakboduroglu.ratekit.rating.RatingService;
+import io.github.burakboduroglu.ratekit.rating.service.RatingService;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 

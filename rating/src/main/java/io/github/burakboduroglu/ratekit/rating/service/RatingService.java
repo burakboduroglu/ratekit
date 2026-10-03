@@ -1,15 +1,15 @@
-package io.github.burakboduroglu.ratekit.rating;
+package io.github.burakboduroglu.ratekit.rating.service;
 
 import io.github.burakboduroglu.ratekit.common.UsageEvent;
 import io.github.burakboduroglu.ratekit.rating.domain.BillingPeriod;
 import io.github.burakboduroglu.ratekit.rating.domain.Charge;
 import io.github.burakboduroglu.ratekit.rating.domain.Rater;
 import io.github.burakboduroglu.ratekit.rating.domain.TariffBook;
-import io.github.burakboduroglu.ratekit.rating.persistence.AccountRepository;
-import io.github.burakboduroglu.ratekit.rating.persistence.ChargeRepository;
-import io.github.burakboduroglu.ratekit.rating.persistence.ProcessedEventRepository;
-import io.github.burakboduroglu.ratekit.rating.persistence.RejectedEventRepository;
-import io.github.burakboduroglu.ratekit.rating.persistence.TariffRepository;
+import io.github.burakboduroglu.ratekit.rating.repository.AccountRepository;
+import io.github.burakboduroglu.ratekit.rating.repository.ChargeRepository;
+import io.github.burakboduroglu.ratekit.rating.repository.ProcessedEventRepository;
+import io.github.burakboduroglu.ratekit.rating.repository.RejectedEventRepository;
+import io.github.burakboduroglu.ratekit.rating.repository.TariffRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;

@@ -1,4 +1,4 @@
-package io.github.burakboduroglu.ratekit.rating.persistence;
+package io.github.burakboduroglu.ratekit.rating.repository;
 
 import io.github.burakboduroglu.ratekit.common.UsageEvent;
 import io.github.burakboduroglu.ratekit.rating.domain.BillingPeriod;
