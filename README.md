@@ -80,12 +80,13 @@ An event enters through a REST endpoint and is written to Kafka. A rating servic
 | 9 | **Framework-free domain** | The pricing logic has no Spring, Kafka or JDBC imports; a test fails the build if one appears. |
 | 10 | **Documented API** | OpenAPI spec and Swagger UI generated from the code. |
 | 11 | **Tested against the real thing** | Integration tests run against real Kafka and PostgreSQL containers via Testcontainers. |
+| 12 | **Layered code, one job per class** | Controller, service, repository, mapper, DTO and config each live in their own package; see [Code structure](#code-structure) and [ADR 0003](docs/adr/0003-package-structure.md). |
 
 ## API
 
 | Method | Path | Success | Errors |
 | --- | --- | --- | --- |
-| `POST` | `/v1/events` | `202 Accepted`, event is stored in Kafka | `400` invalid event, `503` Kafka did not acknowledge |
+| `POST` | `/v1/events` | `202 Accepted` with `{eventId, accountId, status: "ACCEPTED"}`; the event is stored in Kafka | `400` invalid event, `503` Kafka did not acknowledge |
 
 ```json
 {
@@ -169,6 +170,115 @@ Compose services and their pinned images are described in [`docs/specs/local-dev
 
 Known limits today: a failing event is retried for a few seconds, holds up its partition meanwhile, and is then dropped with only a log line (fixed by the dead-letter work). Events that arrive out of order are rated in arrival order.
 
+## Code structure
+
+Each service is split into layers, one package per layer, and a class does one job. The pricing rules sit in a pure `domain` package that knows nothing about Spring, Kafka or the database.
+
+```
+ingest/  io.github.burakboduroglu.ratekit.ingest
+  controller/   EventController
+  dto/          EventRequest, EventResponse
+  mapper/       EventMapper
+  service/      EventIngestService
+  messaging/    EventPublisher
+  config/       KafkaTopicConfig, KafkaProducerConfig
+  exception/    EventPublishException, ApiExceptionHandler
+
+rating/  io.github.burakboduroglu.ratekit.rating
+  messaging/    UsageEventListener
+  service/      RatingService
+  repository/   AccountRepository, ChargeRepository, ProcessedEventRepository,
+                RejectedEventRepository, TariffRepository
+  mapper/       TariffMapper
+  domain/       PriceModel, FlatPrice, TieredPrice, FreeQuotaThenFlat,
+                Tariff, TariffBook, Rater, Charge, BillingPeriod, NoTariffException
+
+common/  io.github.burakboduroglu.ratekit.common
+                UsageEvent, Money, Topics
+```
+
+| Layer | Responsibility | Rule |
+| --- | --- | --- |
+| `controller` | HTTP entry point | Translates the request, calls a service, translates the answer. No business logic. |
+| `dto` | API request and response shapes | Plain data, no behaviour, no conversion. |
+| `mapper` | Conversions between layers | One conversion concern per class (request to event, database row to tariff). |
+| `service` | Use cases and transactions | Coordinates repositories and the domain. |
+| `repository` | Database access | SQL only. |
+| `messaging` | Kafka producer and listener | Adapters between Kafka and the service layer. |
+| `config` | Spring configuration | One concern per class. |
+| `exception` | Exception types and their HTTP translation | Controllers stay free of error handling. |
+| `domain` | Pricing rules | Plain Java, enforced by a test that fails on framework imports. |
+
+Dependencies point inward: controller and listener call the service, the service calls repositories and the domain, and the domain depends on nothing. How a request moves through the layers in `ingest`:
+
+```
+HTTP request
+    -> EventController            validates the body (EventRequest)
+    -> EventMapper                EventRequest -> UsageEvent
+    -> EventIngestService         the use case
+    -> EventPublisher             writes to Kafka, waits for the acknowledgement
+    <- EventMapper                UsageEvent -> EventResponse
+HTTP 202 with EventResponse
+```
+
+## Design principles and patterns
+
+| Pattern or principle | Where | Why |
+| --- | --- | --- |
+| Strategy | `PriceModel` with `FlatPrice`, `TieredPrice`, `FreeQuotaThenFlat` | A new pricing model is a new class; `Rater` does not change. |
+| Repository | `repository` package | SQL is isolated from business logic and swappable in tests. |
+| DTO and mapper | `dto`, `mapper` | The API shape can change without touching the domain, and the other way round. |
+| Service layer | `service` package | One place for use cases and transaction boundaries. |
+| Adapter | `messaging` package | Kafka details stay at the edge. |
+| Value object | `Money`, `UsageEvent` | Immutable records that validate themselves on construction. |
+| Idempotent consumer | `RatingService` with `processed_events` | A redelivered message is detected and skipped. |
+| Constructor injection | every Spring bean | Dependencies are explicit and easy to replace with test doubles. |
+| Fail fast at the boundary | `EventRequest` bean validation, `UsageEvent` invariants | Bad input is rejected before it reaches Kafka. |
+
+SOLID, as applied here:
+
+| Principle | Example |
+| --- | --- |
+| Single responsibility | `TariffRepository` runs SQL; `TariffMapper` parses JSON; `KafkaTopicConfig` and `KafkaProducerConfig` each configure one thing. |
+| Open/closed | Adding a price model means adding a `PriceModel` implementation; only the mapper learns its stored name. |
+| Liskov substitution | Any `PriceModel` can stand in for another inside `Rater`. |
+| Interface segregation | `PriceModel` has a single method. |
+| Dependency inversion | The domain depends on nothing outward. Repositories are concrete classes injected by Spring and are not hidden behind interfaces: with one implementation each, an interface would add ceremony without a benefit. |
+
+## Data model
+
+| Table | Purpose | Key rule |
+| --- | --- | --- |
+| `accounts` | Prepaid balance per account | `CHECK (balance >= 0)` |
+| `tariffs` | Tariff versions per meter, model parameters as JSON | Unique `(meter, effective_from)`; never edited, a price change is a new row |
+| `processed_events` | Idempotency ledger | Primary key `(account_id, event_id)` |
+| `charges` | One priced charge per processed event | Foreign key to `processed_events`, unique `(account_id, event_id)` |
+| `rejected_events` | Events refused for lack of balance, with what they would have cost | Foreign key to `processed_events` |
+
+Tariff parameters are stored as JSON, one shape per model:
+
+| Model | `params` |
+| --- | --- |
+| `FLAT` | `{"rate": "0.05"}` |
+| `FREE_QUOTA_THEN_FLAT` | `{"freeUnits": 100, "rate": "0.10"}` |
+| `TIERED` | `{"tiers": [{"upTo": 100, "rate": "0.10"}, {"upTo": null, "rate": "0.05"}]}`, bounds ascending, the last tier unbounded |
+
+Rates keep full precision; only the final charge is rounded (scale 4, half-even). Schema changes are Flyway migrations in `rating/src/main/resources/db/migration`.
+
+## Configuration
+
+Defaults suit the Compose setup. Any property can be overridden with a Spring environment variable (for example `SPRING_KAFKA_BOOTSTRAP_SERVERS`).
+
+| Property | Default | Service |
+| --- | --- | --- |
+| `server.port` | `8081` / `8082` | ingest / rating |
+| `spring.kafka.bootstrap-servers` | `localhost:9092` | both |
+| `spring.datasource.url` | `jdbc:postgresql://localhost:5432/ratekit` | rating |
+| `spring.datasource.username`, `password` | `ratekit` | rating |
+| `spring.kafka.consumer.group-id` | `ratekit-rating` | rating |
+| `spring.kafka.consumer.auto-offset-reset` | `earliest` | rating |
+| `spring.kafka.producer.acks` | `all`, with idempotent producer | ingest |
+
 ## Project layout
 
 ```
@@ -181,7 +291,7 @@ scripts/   demo data
 compose.yaml
 ```
 
-Design decisions are recorded as ADRs in [`docs/adr/`](docs/adr/). The implementation plan is in [`docs/plans/`](docs/plans/).
+Design decisions are recorded as ADRs in [`docs/adr/`](docs/adr/): money and rounding, balance deduction, package structure. The implementation plan is in [`docs/plans/`](docs/plans/).
 
 ## License
 
