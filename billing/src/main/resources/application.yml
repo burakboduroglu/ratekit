@@ -1,0 +1,27 @@
+server:
+  port: 8083
+
+spring:
+  application:
+    name: ratekit-billing
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ratekit
+    username: ratekit
+    password: ratekit
+  flyway:
+    # billing shares the database with rating but owns only its own tables and its own history
+    locations: classpath:db/billing
+    table: billing_schema_history
+    # the schema already holds rating's tables; baseline at 0 so billing's V1 still runs
+    baseline-on-migrate: true
+    baseline-version: 0
+
+ratekit:
+  billing:
+    # accounts invoiced per database round trip during an invoice run
+    batch-size: 500
+    scheduler:
+      # off by default: an invoice run is triggered by POST /v1/invoice-runs
+      enabled: false
+      # 02:00 UTC on the first day of the month, invoicing the month that just ended
+      cron: "0 0 2 1 * *"

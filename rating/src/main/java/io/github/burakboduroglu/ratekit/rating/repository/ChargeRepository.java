@@ -1,7 +1,7 @@
 package io.github.burakboduroglu.ratekit.rating.repository;
 
 import io.github.burakboduroglu.ratekit.common.UsageEvent;
-import io.github.burakboduroglu.ratekit.rating.domain.BillingPeriod;
+import io.github.burakboduroglu.ratekit.common.BillingPeriod;
 import io.github.burakboduroglu.ratekit.rating.domain.Charge;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
