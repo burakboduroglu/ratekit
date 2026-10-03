@@ -189,6 +189,19 @@ Compose services and their pinned images are described in [`docs/specs/local-dev
 | Billing | Totals are exact sums per meter, a rerun and four concurrent runs create each invoice once, the month includes its first instant and excludes the next month's, a usage is judged in UTC (01:00 in Turkey on 1 October is September), accounts are processed in batches, an open month is refused with 409, and the HTTP API answers with the right statuses |
 | Failure handling | An unknown account and a missing tariff are dead-lettered without retrying, an unreadable message is dead-lettered with its original bytes, a transient failure is retried until it succeeds, exhausted retries end in the dead-letter topic, and in every case the next event on the partition is still rated |
 
+## Continuous integration
+
+Every push to `main` and every pull request runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml): first the **build and test** job (`mvn verify`, with the integration tests running against real Kafka and PostgreSQL through Testcontainers), then, once it passes, the three service images are built in parallel. The images are built to prove they build, not published.
+
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/ratekit-ci-dark.svg">
+  <img src="assets/ratekit-ci.svg" alt="Animated diagram of the CI workflow. A push or pull request starts ci.yml. The build and test job runs checkout, set up JDK 21 and mvn verify. After it passes, a matrix builds the ingest, rating and billing images in parallel, with the shared common module built in, and the run ends with a CI passed check." width="900">
+</picture>
+
+</div>
+
 ## Status
 
 | Done | Next |
@@ -230,7 +243,7 @@ rating/  io.github.burakboduroglu.ratekit.rating
   config/       KafkaTopicConfig, DeadLetterConfig, ConsumerErrorHandlingConfig, RetryProperties
   exception/    UnknownAccountException
   domain/       PriceModel, FlatPrice, TieredPrice, FreeQuotaThenFlat,
-                Tariff, TariffBook, Rater, Charge, BillingPeriod, NoTariffException
+                Tariff, TariffBook, Rater, Charge, NoTariffException
 
 billing/  io.github.burakboduroglu.ratekit.billing
   controller/   InvoiceRunController, InvoiceController
@@ -270,6 +283,32 @@ HTTP request
     <- EventMapper                UsageEvent -> EventResponse
 HTTP 202 with EventResponse
 ```
+
+### Which object goes where
+
+The diagrams follow the objects through the services: which DTO, domain object, Kafka message or table each one is, and which class converts it. `UsageEvent`, `Money` and `BillingPeriod` live in `common` and are shared.
+
+**Write path** (client to Kafka, rating, PostgreSQL, and the dead-letter topic):
+
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/ratekit-objects-write-path-dark.svg">
+  <img src="assets/ratekit-objects-write-path.svg" alt="Object flow of the write path. A JSON body becomes EventRequest, then UsageEvent through EventMapper, is published to the usage-events Kafka topic, read by UsageEventListener, rated inside RatingService.handle, and ends as a row in charges or rejected_events; failures go to usage-events.dlq." width="900">
+</picture>
+
+</div>
+
+**Invoicing** (client to billing, charges, invoices):
+
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/ratekit-objects-invoicing-dark.svg">
+  <img src="assets/ratekit-objects-invoicing.svg" alt="Object flow of invoicing. A period request becomes BillingPeriod, usage rows summed from charges become invoice lines and an Invoice, which is stored in invoices and invoice_lines; reading an invoice maps it to InvoiceResponse." width="900">
+</picture>
+
+</div>
 
 ## Design principles and patterns
 
