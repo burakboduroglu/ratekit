@@ -46,9 +46,10 @@ class EventIngestIntegrationTest {
         String body = """
                 {"eventId":"evt-1","accountId":"acc-1","meter":"sms","quantity":3,"occurredAt":"2026-10-03T10:00:00Z"}""";
 
-        ResponseEntity<Void> response = http.postForEntity("/v1/events", jsonRequest(body), Void.class);
+        ResponseEntity<String> response = http.postForEntity("/v1/events", jsonRequest(body), String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+        assertThat(response.getBody()).contains("\"eventId\":\"evt-1\"").contains("\"status\":\"ACCEPTED\"");
         // the topic is shared with the other tests, so find our record by content
         ConsumerRecord<String, String> record = consumeAll().stream()
                 .filter(r -> r.value().contains("\"evt-1\""))
