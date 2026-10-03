@@ -1,0 +1,10 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: ratekit-rating
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ratekit
+    username: ratekit
+    password: ratekit
