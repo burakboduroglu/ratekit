@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 420" width="960" height="420" role="img" aria-labelledby="t d">
+<title id="t">ratekit event flow</title>
+<desc id="d">A usage source posts events to ingest, which writes them to the Kafka topic usage-events with three partitions. The rating consumer group prices each event and stores the charge in PostgreSQL. Duplicate events are skipped and events the account cannot afford are rejected. Billing is planned.</desc>
+<style>
+text{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;fill:#1f2328}
+.t{font-size:16px;font-weight:600}
+.s{font-size:13px;fill:#59636e}
+.m{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;fill:#59636e}
+.p{font-size:11px;font-weight:600;fill:#59636e;paint-order:stroke;stroke:#eaeef2;stroke-width:6px}
+.box{fill:#f6f8fa;stroke:#d0d7de;stroke-width:1.5}
+.lane{fill:#eaeef2;stroke:none}
+.flow{fill:none;stroke:#8c959f;stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round}
+.arr{fill:#8c959f}
+.plan{fill:none;stroke:#8c959f;stroke-width:1.5;stroke-dasharray:6 5}
+.dot{fill:#0969da}.dot.dup{fill:#9a6700}.dot.rej{fill:#cf222e}
+.lbl{font-size:13px;font-weight:600}.lbl.dup{fill:#9a6700}.lbl.rej{fill:#cf222e}
+.still{display:none}
+@media (prefers-reduced-motion:reduce){.live{display:none}.still{display:inline}}
+</style>
+<path class="flow" d="M126,215 H166 M736,215 H786"/>
+<path class="arr" d="M166,215 l-8,-5 v10 z"/>
+<path class="arr" d="M606,215 l-8,-5 v10 z"/>
+<path class="arr" d="M786,215 l-8,-5 v10 z"/>
+<rect class="box" x="16" y="165" width="110" height="100" rx="10"/>
+<text class="t" x="71" y="209" text-anchor="middle">usage</text><text class="t" x="71" y="229" text-anchor="middle">source</text>
+<text class="s" x="71" y="250" text-anchor="middle">SMS, MB, min</text>
+<rect class="box" x="166" y="165" width="120" height="100" rx="10"/>
+<text class="t" x="226" y="186" text-anchor="middle">ingest</text><text class="s" x="226" y="202" text-anchor="middle">producer</text>
+<text class="m" x="226" y="248" text-anchor="middle">POST /v1/events</text>
+<rect class="box" x="336" y="66" width="220" height="260" rx="12"/>
+<text class="t" x="446" y="94" text-anchor="middle">usage-events</text>
+<text class="s" x="446" y="113" text-anchor="middle">Kafka topic</text>
+<rect class="lane" x="366" y="146" width="164" height="28" rx="14"/>
+<rect class="lane" x="366" y="201" width="164" height="28" rx="14"/>
+<rect class="lane" x="366" y="256" width="164" height="28" rx="14"/>
+<text class="s" x="446" y="312" text-anchor="middle">key = accountId</text>
+<path class="flow" d="M286,215 H316 L366,160 H530 L580,215 H606"/>
+<path class="flow" d="M286,215 H316 L366,215 H530 L580,215 H606"/>
+<path class="flow" d="M286,215 H316 L366,270 H530 L580,215 H606"/>
+<text class="p" x="378" y="164">P0</text>
+<text class="p" x="378" y="219">P1</text>
+<text class="p" x="378" y="274">P2</text>
+<rect class="box" x="606" y="165" width="130" height="100" rx="10"/>
+<text class="t" x="671" y="186" text-anchor="middle">rating</text><text class="s" x="671" y="202" text-anchor="middle">consumer group</text>
+<path class="box" d="M786,170 a79,14 0 0 1 158,0 v96 a79,14 0 0 1 -158,0 z"/>
+<path class="flow" d="M786,170 a79,14 0 0 0 158,0"/>
+<text class="t" x="865" y="206" text-anchor="middle">PostgreSQL</text>
+<text class="s" x="865" y="230" text-anchor="middle">accounts</text>
+<text class="s" x="865" y="248" text-anchor="middle">tariffs</text>
+<text class="s" x="865" y="266" text-anchor="middle">charges</text>
+<path class="plan" d="M865,292 V334"/><path class="arr" d="M865,344 l-5,-9 h10 z"/>
+<rect class="plan" x="786" y="346" width="158" height="52" rx="10"/>
+<text class="t" x="865" y="370" text-anchor="middle">billing</text>
+<text class="s" x="865" y="388" text-anchor="middle" font-style="italic">planned</text>
+<g class="live">
+<circle class="dot" r="6" cx="0" cy="0" opacity="0"><animateMotion path="M126,215 H316 L366,160 H530 L580,215 H806" dur="9s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.02;0.36;1"/><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.02;0.04;0.33;0.36;1" dur="9s" repeatCount="indefinite"/></circle>
+<circle class="dot" r="6" cx="0" cy="0" opacity="0"><animateMotion path="M126,215 H316 L366,270 H530 L580,215 H806" dur="9s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.1;0.44;1"/><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.1;0.12;0.41;0.44;1" dur="9s" repeatCount="indefinite"/></circle>
+<circle class="dot" r="6" cx="0" cy="0" opacity="0"><animateMotion path="M126,215 H316 L366,215 H530 L580,215 H806" dur="9s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.18;0.52;1"/><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.18;0.2;0.49;0.52;1" dur="9s" repeatCount="indefinite"/></circle>
+<circle class="dot" r="6" cx="0" cy="0" opacity="0"><animateMotion path="M126,215 H316 L366,215 H530 L580,215 H806" dur="9s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.3;0.64;1"/><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.3;0.32;0.61;0.64;1" dur="9s" repeatCount="indefinite"/></circle>
+<circle class="dot" r="6" cx="0" cy="0" opacity="0"><animateMotion path="M126,215 H316 L366,160 H530 L580,215 H806" dur="9s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.4;0.74;1"/><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.4;0.42;0.71;0.74;1" dur="9s" repeatCount="indefinite"/></circle>
+<circle class="dot dup" r="6" cx="0" cy="0" opacity="0"><animateMotion path="M126,215 H316 L366,215 H530 L580,215 H806" dur="9s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;0.7059;0.7059" keyTimes="0;0.46;0.7;1"/><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.46;0.48;0.74;0.8;1" dur="9s" repeatCount="indefinite"/><animate attributeName="r" values="6;6;6;1.5;1.5" keyTimes="0;0.7;0.74;0.8;1" dur="9s" repeatCount="indefinite"/></circle><text class="lbl dup" x="671" y="148" text-anchor="middle" opacity="0">duplicate skipped<animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.7;0.73;0.81;0.84;1" dur="9s" repeatCount="indefinite"/></text>
+<circle class="dot rej" r="6" cx="0" cy="0" opacity="0"><animateMotion path="M126,215 H316 L366,270 H530 L580,215 H806" dur="9s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;0.7255;0.7255" keyTimes="0;0.6;0.8467;1"/><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.6;0.62;0.8867;0.9467;1" dur="9s" repeatCount="indefinite"/><animate attributeName="r" values="6;6;6;1.5;1.5" keyTimes="0;0.8467;0.8867;0.9467;1" dur="9s" repeatCount="indefinite"/></circle><text class="lbl rej" x="671" y="300" text-anchor="middle" opacity="0">rejected: insufficient balance<animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.8467;0.8767;0.9567;0.9867;1" dur="9s" repeatCount="indefinite"/></text>
+</g>
+<g class="still">
+<circle class="dot" cx="146" cy="215" r="5"/>
+<circle class="dot" cx="432" cy="160" r="5"/>
+<circle class="dot" cx="478" cy="270" r="5"/>
+<circle class="dot" cx="420" cy="215" r="5"/>
+<circle class="dot" cx="700" cy="215" r="5"/>
+<circle class="dot" cx="806" cy="215" r="5"/>
+<circle class="dot dup" cx="598" cy="207" r="5"/><circle class="dot rej" cx="598" cy="223" r="5"/>
+<text class="lbl dup" x="671" y="148" text-anchor="middle">duplicate skipped</text>
+<text class="lbl rej" x="671" y="300" text-anchor="middle">rejected: insufficient balance</text>
+</g>
+</svg>
