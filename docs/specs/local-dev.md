@@ -50,12 +50,11 @@ One `Dockerfile` at the repository root builds any service: `--build-arg SERVICE
 
 ## Memory (read this)
 
-The default Podman VM has 2 GB. The whole stack needs about 1.7 GB there: Kafka ~350 MB with its heap capped at 384 MB (`KAFKA_HEAP_OPTS`), each Spring service ~230 MB (`MaxRAMPercentage=50`, `mem_limit: 512m`), PostgreSQL ~65 MB.
+The whole stack uses about 1.8 GB of RAM inside the Podman VM: Kafka ~350 MB with its heap capped at 384 MB (`KAFKA_HEAP_OPTS`), each Spring service ~230 MB (`MaxRAMPercentage=50`, `mem_limit: 512m`), PostgreSQL ~65 MB, plus the kernel and page cache.
 
-- With the broker heap uncapped the stack did not fit: the VM ran out of memory and the kernel killed Kafka (exit code 137, SIGKILL), after which `ingest` answered `503`.
-- A load test needs headroom too: with three rating threads, k6's live dashboard and a 90 second run next to the full stack, the VM ran out of memory again and the kernel killed Kafka. Keep `billing` stopped during load tests (`podman compose up -d postgres kafka ingest rating`). See `docs/perf.md`.
-- **Do not run `mvn verify` while the stack is up:** Testcontainers starts a second Kafka and PostgreSQL and the VM will run out of memory. Run `podman compose down` first.
-- More room: `podman machine stop && podman machine set --memory 4096 && podman machine start` (not done here; it is a change to the VM, so it is yours to make).
+- **Podman's default VM has 2 GB, which is too little.** On it the stack ran at the edge: with the broker heap uncapped the kernel killed Kafka (exit code 137, SIGKILL) and `ingest` then answered `503`; with the heap capped it still happened again during load tests and when `mvn verify` ran next to the stack. On 2026-10-03 the VM was raised to 4 GB (`podman machine stop && podman machine set --memory 4096 && podman machine start`, an Apple M1 with 8 GB) and none of this recurred, including a 90 second load test with three rating threads.
+- **On a 2 GB VM**, stop the stack before `mvn verify` (Testcontainers starts a second Kafka and PostgreSQL) and keep `billing` stopped during load tests.
+- More detail on what was measured: `docs/perf.md`.
 
 ## Metrics and load test
 

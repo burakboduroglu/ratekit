@@ -21,7 +21,7 @@ To see how the services behave under load (how long rating takes per event, whet
 | --- | --- |
 | Log lines only | Cannot be graphed or alerted on, and parsing logs for numbers is fragile. |
 | Prometheus client library directly | Ties the code to one system; Micrometer gives the same output without that. |
-| Add Prometheus and Grafana to Compose | The right next step, but the whole stack already uses about 1.7 GB of the 2 GB Podman VM; two more JVM-sized containers do not fit. |
+| Add Prometheus and Grafana to Compose | The right next step, but the whole stack already uses about 1.8 GB, which left no room in the original 2 GB Podman VM; with the VM now at 4 GB it would fit, so this is deferred, not rejected. |
 | OpenTelemetry tracing | Useful once there are more hops; with three services and one queue the metrics answer the questions asked so far. |
 
 ## Consequences

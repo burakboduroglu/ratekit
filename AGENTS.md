@@ -21,7 +21,7 @@ Open-source usage metering and rating engine. Learning project: Java 21, Spring 
 - Build and test: `mvn -B verify` from the repo root.
 - Testcontainers on Podman: run Maven with `DOCKER_HOST=unix:///var/run/docker.sock` (the Podman VM exposes the Docker API there). Verified on 2026-10-03; Ryuk needed no extra setting.
 - Containers run on Podman (no Docker). The VM must be up: `podman machine start`. Compose files stay Docker-compatible.
-- Whole stack in containers: `podman compose up -d --build` (five containers). **Stop it before `mvn verify`**: the Podman VM has 2 GB and Testcontainers needs room; running both got Kafka OOM-killed (exit 137). Details in `docs/specs/local-dev.md`.
+- Whole stack in containers: `podman compose up -d --build` (five containers). On a 2 GB Podman VM stop it before `mvn verify` (Testcontainers needs room; running both got Kafka OOM-killed, exit 137). This machine's VM was raised to 4 GB on 2026-10-03. Details in `docs/specs/local-dev.md`.
 - Load test: `COMPOSE="podman compose" CONTAINER=podman load/run.sh`; commands, results and limits in `docs/perf.md`.
 - Plan and its status: `docs/plans/2026-10-03-ratekit-plan.md`.
 

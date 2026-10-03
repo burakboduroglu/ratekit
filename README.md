@@ -157,7 +157,7 @@ java -jar billing/target/billing-0.1.0-SNAPSHOT.jar
 
 `rating` creates its own schema on first start (Flyway), and `billing` adds its two tables next to it with a separate history table; in the container setup `billing` waits for `rating` to be healthy for that reason.
 
-**Memory:** the full stack needs about 1.7 GB. The default Podman VM has 2 GB, so stop the stack (`compose down`) before `mvn verify`, whose integration tests start their own Kafka and PostgreSQL, or give the VM more (`podman machine set --memory 4096`). Details in [`docs/specs/local-dev.md`](docs/specs/local-dev.md).
+**Memory:** the full stack needs about 1.8 GB. Podman's default VM has 2 GB, which is too tight (the kernel killed Kafka); give it 4 GB with `podman machine set --memory 4096`. Even then, stop the stack before `mvn verify` if the VM is small, because the integration tests start their own Kafka and PostgreSQL. Details in [`docs/specs/local-dev.md`](docs/specs/local-dev.md).
 
 To see what could not be processed, read the dead-letter topic (each record carries the original topic, partition, offset and the exception in its headers):
 
@@ -217,16 +217,17 @@ Each service serves `/actuator/health` and Prometheus-format metrics at `/actuat
 | `ratekit_invoices_total{result}` | billing | invoices created or skipped as already issued |
 | `kafka_consumer_fetch_manager_records_lag_max` | rating | how far behind the consumer is |
 
-A k6 load test (`load/run.sh`) drove ingest on one laptop, with everything including the load generator sharing a 4 CPU, 2 GB virtual machine, so the numbers describe that setup and not production:
+A k6 load test (`load/run.sh`) drove ingest on one laptop, with everything including the load generator sharing a 4 CPU, 4 GB virtual machine, so the numbers describe that setup and not production. No request failed in any run.
 
-| | One consumer thread | Three consumer threads |
-| --- | --- | --- |
-| Load | 1500 requests/s for 45 s | 1500 requests/s for 45 s |
-| Rating time per event (mean) | 1.0 ms | 2.9 ms |
-| Max consumer lag | 4,113 records | 429 records |
-| Events accepted | 55,477 | 45,989 |
+| Load (45 s each) | 1500 req/s, one rating thread | 1500 req/s, three rating threads | 3000 req/s, three rating threads |
+| --- | --- | --- | --- |
+| Events accepted | 66,267 | 66,245 | 126,621 |
+| ingest latency, median / p95 | 0.43 ms / 30 ms | 0.85 ms / 54 ms | 1.3 ms / 151 ms |
+| Rating time per event (mean) | 0.72 ms | 1.28 ms | 1.27 ms |
+| Max consumer lag | 2,125 records | 75 records | 11,547 records |
+| Rating caught up | 6 s after the load | 1 s after | 12 s after |
 
-One rating thread handles about 1000 events per second. More threads cut the lag but did not raise total throughput on this shared machine. Atomic balance deduction was 8 times faster than `SELECT FOR UPDATE` on a single hot account. A run that exhausted the VM's memory killed Kafka; after a restart every one of the 34,975 messages in the topic had been rated, none lost. Details, caveats and what was not measured are in [`docs/perf.md`](docs/perf.md).
+One rating thread handles about 1,400 events per second; three together drained a 3,000 per second backlog at about 2,900 per second. On this machine `ingest` runs out of CPU first, then the database. Atomic balance deduction was 8 times faster than `SELECT FOR UPDATE` on a single hot account. On the original 2 GB VM the stack did not fit and a run killed Kafka; after a restart every one of the 34,975 messages in the topic had been rated, none lost. Details, the history, caveats and what was not measured are in [`docs/perf.md`](docs/perf.md).
 
 ## Status
 
@@ -245,7 +246,7 @@ One rating thread handles about 1000 events per second. More threads cut the lag
 | GitHub Actions CI: build, test (Testcontainers), build the three images | |
 | Metrics, a k6 load test and measured results | |
 
-Known limits today: a transient failure can hold up its partition for up to 7.5 seconds (configurable). Dead letters are inspected and replayed by hand. Events that arrive out of order are rated in arrival order. Rejections for insufficient balance are not reported back to the sender, who already received `202`. A charge rated after its month was invoiced is not added to that invoice (an issued invoice is never rewritten). `billing` reads `rating`'s `charges` table directly, so the two services share a database. An invoice run is synchronous. The full stack needs about 1.7 GB, which is nearly all of a default 2 GB Podman VM.
+Known limits today: a transient failure can hold up its partition for up to 7.5 seconds (configurable). Dead letters are inspected and replayed by hand. Events that arrive out of order are rated in arrival order. Rejections for insufficient balance are not reported back to the sender, who already received `202`. A charge rated after its month was invoiced is not added to that invoice (an issued invoice is never rewritten). `billing` reads `rating`'s `charges` table directly, so the two services share a database. An invoice run is synchronous. The full stack needs about 1.7 GB, which is nearly all of a default 2 GB Podman VM (4 GB is recommended).
 
 ## Code structure
 
