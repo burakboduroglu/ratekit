@@ -9,6 +9,7 @@
 
 **Open-source usage metering and rating engine: usage events in, priced charges out.**
 
+[![CI](https://img.shields.io/github/actions/workflow/status/burakboduroglu/ratekit/ci.yml?branch=main&label=CI&style=flat-square)](https://github.com/burakboduroglu/ratekit/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-000?style=flat-square)](LICENSE)
 ![Java](https://img.shields.io/badge/Java-21-000?style=flat-square&logo=openjdk)
 ![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.5-000?style=flat-square&logo=springboot)
@@ -22,7 +23,7 @@
 
 ratekit takes a stream of usage events (an SMS sent, a megabyte used, a minute called), decides what each one costs under the tariff that applied at that moment, and records the charge. It is the core of a prepaid charging and billing system, kept small enough to read in an afternoon.
 
-> **Status: early development.** Ingest, rating, prepaid balance deduction, failure handling (retry and dead-letter) and monthly invoicing work end to end. Container images, CI and a load test are still to come; see [Status](#status).
+> **Status: early development.** Ingest, rating, prepaid balance deduction, failure handling (retry and dead-letter) and monthly invoicing work end to end. A load test and observability are still to come; see [Status](#status).
 
 ## What it is
 
@@ -80,6 +81,7 @@ Invoicing is a separate step. When a month has ended, `POST /v1/invoice-runs` on
 | 13 | **Tested against the real thing** | Integration tests run against real Kafka and PostgreSQL containers via Testcontainers. |
 | 14 | **Layered code, one job per class** | Controller, service, repository, mapper, DTO and config each live in their own package; see [Code structure](#code-structure) and [ADR 0003](docs/adr/0003-package-structure.md). |
 | 15 | **One command, whole stack** | `docker compose up -d --build` builds three small images (multi-stage, JRE only, non-root user) and starts PostgreSQL, Kafka and the services in dependency order, each with a health check. See [`docs/specs/local-dev.md`](docs/specs/local-dev.md). |
+| 16 | **CI on every push and pull request** | GitHub Actions builds and runs all unit and integration tests (real Kafka and PostgreSQL via Testcontainers), then builds the three service images in parallel. Images are built, not published. See [`.github/workflows/ci.yml`](.github/workflows/ci.yml). |
 
 ## API
 
@@ -191,8 +193,8 @@ Compose services and their pinned images are described in [`docs/specs/local-dev
 
 | Done | Next |
 | --- | --- |
-| Maven multi-module build | GitHub Actions CI/CD |
-| PostgreSQL and Kafka via Compose | Load test and observability |
+| Maven multi-module build | Load test and observability |
+| PostgreSQL and Kafka via Compose | |
 | Event contract and money rules | |
 | `ingest` with OpenAPI | |
 | Versioned tariffs and three price models | |
@@ -201,6 +203,7 @@ Compose services and their pinned images are described in [`docs/specs/local-dev
 | Retry with backoff and a dead-letter topic | |
 | `billing`: idempotent monthly invoices | |
 | Dockerfile and a one-command stack | |
+| GitHub Actions CI: build, test (Testcontainers), build the three images | |
 
 Known limits today: a transient failure can hold up its partition for up to 7.5 seconds (configurable). Dead letters are inspected and replayed by hand. Events that arrive out of order are rated in arrival order. Rejections for insufficient balance are not reported back to the sender, who already received `202`. A charge rated after its month was invoiced is not added to that invoice (an issued invoice is never rewritten). `billing` reads `rating`'s `charges` table directly, so the two services share a database. An invoice run is synchronous.
 

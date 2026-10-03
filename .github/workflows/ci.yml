@@ -16,7 +16,7 @@ concurrency:
 jobs:
   build-test:
     name: build and test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
 
@@ -35,7 +35,7 @@ jobs:
   images:
     name: build image (${{ matrix.service }})
     needs: build-test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:

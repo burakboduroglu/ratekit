@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 420" width="960" height="420" role="img" aria-labelledby="t d">
+<title id="t">ratekit CI pipeline</title>
+<desc id="d">A push or pull request starts the GitHub Actions workflow ci.yml. Job build and test runs checkout, set up JDK 21 and mvn verify, which runs the unit and integration tests with Testcontainers for Kafka and PostgreSQL. After it passes, job build images builds the ingest, rating and billing Docker images in three parallel lanes, with the shared common module built in. The images are built, not pushed. When every step passes the check is CI passed; if a step fails the run stops and the check is CI failed.</desc>
+<style>
+text{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;fill:#1f2328}
+.t{font-size:16px;font-weight:600}
+.s{font-size:13px;fill:#59636e}
+.m{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;fill:#59636e}
+.h{paint-order:stroke;stroke:#f6f8fa;stroke-width:6px}
+.box{fill:#f6f8fa;stroke:#d0d7de;stroke-width:1.5}
+.job{fill:#eaeef2;stroke:#d0d7de;stroke-width:1.5}
+.step{fill:#f6f8fa;stroke:#d0d7de;stroke-width:1.5}
+.track{fill:#d0d7de}
+.flow{fill:none;stroke:#8c959f;stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round}
+.arr{fill:#8c959f}
+.node{fill:#8c959f}
+.dot{fill:#0969da}
+.hl{fill:#0969da;fill-opacity:.12;stroke:#0969da;stroke-width:1.5}
+.hlbad{fill:#cf222e;fill-opacity:.1;stroke:#cf222e;stroke-width:1.5}
+.bar{fill:#0969da}.bar.ok{fill:#1a7f37}
+.ck{fill:none;stroke:#1a7f37;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.disc{fill:#1a7f37}.disc.bad{fill:#cf222e}.disc.idle{fill:none;stroke:#8c959f;stroke-width:1.5;stroke-dasharray:4 4}
+.on{fill:none;stroke:#ffffff;stroke-width:4;stroke-linecap:round;stroke-linejoin:round}
+.tp{fill:#1a7f37}.tf{fill:#cf222e}
+.fail{fill:none;stroke:#cf222e;stroke-width:1.5;stroke-dasharray:6 5;stroke-linecap:round;stroke-linejoin:round;opacity:.5}
+.failx{fill:none;stroke:#cf222e;stroke-width:2;stroke-dasharray:6 5;stroke-linecap:round;stroke-linejoin:round}
+.failh{fill:#cf222e;opacity:.5}
+.failt{font-size:13px;font-weight:600;fill:#cf222e}
+.still{display:none}
+@media (prefers-reduced-motion:reduce){.live{display:none}.still{display:inline}}
+</style>
+<rect class="box" x="16" y="62" width="110" height="100" rx="10"/>
+<text class="t" x="71" y="108" text-anchor="middle">push /</text><text class="t" x="71" y="128" text-anchor="middle">pull request</text>
+<rect class="box" x="150" y="16" width="656" height="388" rx="12"/>
+<text class="t" x="166" y="38">GitHub Actions: ci.yml</text>
+<rect class="job" x="166" y="52" width="280" height="306" rx="10"/>
+<text class="t" x="182" y="78">build and test</text>
+<rect class="job" x="502" y="52" width="288" height="306" rx="10"/>
+<text class="t" x="518" y="78">build images</text>
+<text class="s" x="750" y="78" text-anchor="end">matrix: 3 lanes</text>
+<path class="flow" d="M126,112 H196 V248"/>
+<path class="flow" d="M196,112 H208"/><path class="arr" d="M214,112 l-8,-5 v10 z"/><circle class="node" cx="196" cy="112" r="4"/>
+<rect class="step" x="214" y="92" width="220" height="40" rx="8"/>
+<path class="flow" d="M196,160 H208"/><path class="arr" d="M214,160 l-8,-5 v10 z"/><circle class="node" cx="196" cy="160" r="4"/>
+<rect class="step" x="214" y="140" width="220" height="40" rx="8"/>
+<path class="flow" d="M196,248 H208"/><path class="arr" d="M214,248 l-8,-5 v10 z"/><circle class="node" cx="196" cy="248" r="4"/>
+<rect class="step" x="214" y="188" width="220" height="128" rx="8"/>
+<text class="t" x="230" y="117">checkout</text><text class="t" x="230" y="165">set up JDK 21</text>
+<text class="t" x="230" y="212">mvn verify</text>
+<rect class="track" x="226" y="245" width="198" height="6" rx="3"/>
+<text class="s" x="230" y="274">unit and integration tests</text>
+<text class="s" x="230" y="291">(Testcontainers: Kafka and</text>
+<text class="s" x="230" y="308">PostgreSQL)</text>
+<path class="flow" d="M424,248 H520"/><path class="arr" d="M528,248 l-8,-5 v10 z"/>
+<text class="s h" x="474" y="240" text-anchor="middle">needs</text>
+<rect class="box" x="548" y="88" width="200" height="46" rx="8"/>
+<text class="t" x="648" y="108" text-anchor="middle">common</text><text class="s" x="648" y="125" text-anchor="middle">shared module, built in</text>
+<path class="flow" d="M548,111 H528 V308"/>
+<path class="flow" d="M528,188 H540"/><path class="arr" d="M548,188 l-8,-5 v10 z"/>
+<rect class="step" x="548" y="150" width="200" height="52" rx="8"/>
+<text class="t" x="564" y="172">ingest</text><text class="s" x="732" y="172" text-anchor="end">docker build</text>
+<rect class="track" x="560" y="185" width="176" height="6" rx="3"/>
+<path class="flow" d="M748,188 H770"/>
+<path class="flow" d="M528,248 H540"/><path class="arr" d="M548,248 l-8,-5 v10 z"/>
+<rect class="step" x="548" y="210" width="200" height="52" rx="8"/>
+<text class="t" x="564" y="232">rating</text><text class="s" x="732" y="232" text-anchor="end">docker build</text>
+<rect class="track" x="560" y="245" width="176" height="6" rx="3"/>
+<path class="flow" d="M748,248 H770"/>
+<path class="flow" d="M528,308 H540"/><path class="arr" d="M548,308 l-8,-5 v10 z"/>
+<rect class="step" x="548" y="270" width="200" height="52" rx="8"/>
+<text class="t" x="564" y="292">billing</text><text class="s" x="732" y="292" text-anchor="end">docker build</text>
+<rect class="track" x="560" y="305" width="176" height="6" rx="3"/>
+<path class="flow" d="M748,308 H770"/>
+<path class="flow" d="M770,188 V308 M770,248 H822"/><path class="arr" d="M830,248 l-8,-5 v10 z"/>
+<text class="s" x="646" y="346" text-anchor="middle" font-style="italic">built, not pushed</text>
+<rect class="box" x="830" y="188" width="114" height="120" rx="10"/>
+<path class="fail" d="M324,316 V384 H887 V318"/><path class="failh" d="M887,310 l-5,9 h10 z"/>
+<text class="failt h" x="560" y="378" text-anchor="middle" opacity=".8">a failing step stops the run</text>
+<circle class="dot" cx="26" cy="262" r="6"/><text class="s" x="42" y="267">commit</text>
+<g transform="translate(26,288)"><path class="ck" d="M-5,0 l4,4 l8,-9"/></g><text class="s" x="42" y="293">step or job passed</text>
+<path class="fail" style="opacity:.9" d="M18,314 H34"/><text class="s" x="42" y="319">failure path</text>
+<g class="live">
+<rect class="hl" x="214" y="92" width="220" height="40" rx="8" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.045;0.06;0.15;0.165;1" dur="10s" repeatCount="indefinite"/></rect>
+<g transform="translate(414,112)" opacity="0"><path class="ck" d="M-5,0 l4,4 l8,-9"/><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.15;0.165;0.88;0.9;1" dur="10s" repeatCount="indefinite"/></g>
+<rect class="hl" x="214" y="140" width="220" height="40" rx="8" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.165;0.18;0.27;0.285;1" dur="10s" repeatCount="indefinite"/></rect>
+<g transform="translate(414,160)" opacity="0"><path class="ck" d="M-5,0 l4,4 l8,-9"/><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.27;0.285;0.88;0.9;1" dur="10s" repeatCount="indefinite"/></g>
+<rect class="hl" x="214" y="188" width="220" height="128" rx="8" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.285;0.3;0.48;0.495;1" dur="10s" repeatCount="indefinite"/></rect>
+<g transform="translate(414,210)" opacity="0"><path class="ck" d="M-5,0 l4,4 l8,-9"/><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.48;0.495;0.88;0.9;1" dur="10s" repeatCount="indefinite"/></g>
+<rect class="bar" x="226" y="245" width="0" height="6" rx="3" opacity="0"><animate attributeName="width" values="0;0;198;198" keyTimes="0;0.3237;0.48;1" dur="10s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.3;0.32;0.88;0.9;1" dur="10s" repeatCount="indefinite"/></rect>
+<rect class="hlbad" x="214" y="188" width="220" height="128" rx="8" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.895;0.91;0.925;0.945;1" dur="10s" repeatCount="indefinite"/></rect>
+<g transform="translate(422,76)" opacity="0"><path class="ck" d="M-5,0 l4,4 l8,-9"/><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.48;0.495;0.88;0.9;1" dur="10s" repeatCount="indefinite"/></g>
+<rect class="hl" x="548" y="150" width="200" height="52" rx="8" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.54;0.55;0.7;0.715;1" dur="10s" repeatCount="indefinite"/></rect>
+<rect class="bar" x="560" y="185" width="0" height="6" rx="3" opacity="0"><animate attributeName="width" values="0;0;176;176" keyTimes="0;0.559;0.691;1" dur="10s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.55;0.56;0.88;0.9;1" dur="10s" repeatCount="indefinite"/></rect>
+<g transform="translate(628,168)" opacity="0"><path class="ck" d="M-5,0 l4,4 l8,-9"/><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.7;0.715;0.88;0.9;1" dur="10s" repeatCount="indefinite"/></g>
+<rect class="hl" x="548" y="210" width="200" height="52" rx="8" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.54;0.55;0.7;0.715;1" dur="10s" repeatCount="indefinite"/></rect>
+<rect class="bar" x="560" y="245" width="0" height="6" rx="3" opacity="0"><animate attributeName="width" values="0;0;176;176" keyTimes="0;0.559;0.691;1" dur="10s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.55;0.56;0.88;0.9;1" dur="10s" repeatCount="indefinite"/></rect>
+<g transform="translate(628,228)" opacity="0"><path class="ck" d="M-5,0 l4,4 l8,-9"/><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.7;0.715;0.88;0.9;1" dur="10s" repeatCount="indefinite"/></g>
+<rect class="hl" x="548" y="270" width="200" height="52" rx="8" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.54;0.55;0.7;0.715;1" dur="10s" repeatCount="indefinite"/></rect>
+<rect class="bar" x="560" y="305" width="0" height="6" rx="3" opacity="0"><animate attributeName="width" values="0;0;176;176" keyTimes="0;0.559;0.691;1" dur="10s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.55;0.56;0.88;0.9;1" dur="10s" repeatCount="indefinite"/></rect>
+<g transform="translate(628,288)" opacity="0"><path class="ck" d="M-5,0 l4,4 l8,-9"/><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.7;0.715;0.88;0.9;1" dur="10s" repeatCount="indefinite"/></g>
+<g transform="translate(772,80)" opacity="0"><path class="ck" d="M-5,0 l4,4 l8,-9"/><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.72;0.735;0.88;0.9;1" dur="10s" repeatCount="indefinite"/></g>
+<circle class="dot" r="6" cx="0" cy="0" opacity="0"><animateMotion path="M126,112 H196 V248 H528" dur="10s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;0.1301;0.1301;0.2193;0.2193;0.3829;0.3829;0.8067;1;1" keyTimes="0;0.02;0.06;0.15;0.165;0.27;0.285;0.3;0.48;0.52;1"/><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.02;0.035;0.515;0.53;1" dur="10s" repeatCount="indefinite"/></circle>
+<circle class="dot" r="6" cx="0" cy="0" opacity="0"><animateMotion path="M528,248 V188 H770 V248 H830" dur="10s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;0.1422;0.6635;1;1" keyTimes="0;0.52;0.55;0.7;0.78;1"/><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.52;0.53;0.77;0.79;1" dur="10s" repeatCount="indefinite"/></circle>
+<circle class="dot" r="6" cx="0" cy="0" opacity="0"><animateMotion path="M528,248 V248 H770 V248 H830" dur="10s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;0;0.7285;1;1" keyTimes="0;0.52;0.55;0.7;0.78;1"/><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.52;0.53;0.77;0.79;1" dur="10s" repeatCount="indefinite"/></circle>
+<circle class="dot" r="6" cx="0" cy="0" opacity="0"><animateMotion path="M528,248 V308 H770 V248 H830" dur="10s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;0.1422;0.6635;1;1" keyTimes="0;0.52;0.55;0.7;0.78;1"/><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.52;0.53;0.77;0.79;1" dur="10s" repeatCount="indefinite"/></circle>
+<g opacity="1"><circle class="disc idle" cx="887" cy="232" r="24"/><text class="s" x="887" y="284" text-anchor="middle">CI result</text><animate attributeName="opacity" values="1;1;0;0;1;1;0;0;1;1" keyTimes="0;0.77;0.79;0.89;0.905;0.915;0.93;0.985;0.995;1" dur="10s" repeatCount="indefinite"/></g>
+<g opacity="0"><circle class="disc" cx="887" cy="232" r="24"/><path class="on" d="M876,233 l8,9 l15,-17"/><text class="t tp" x="887" y="284" text-anchor="middle">CI passed</text><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.78;0.8;0.88;0.895;1" dur="10s" repeatCount="indefinite"/></g>
+<g opacity="0"><circle class="disc bad" cx="887" cy="232" r="24"/><path class="on" d="M878,223 l18,18 M896,223 l-18,18"/><text class="t tf" x="887" y="284" text-anchor="middle">CI failed</text><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.92;0.935;0.985;0.995;1" dur="10s" repeatCount="indefinite"/></g>
+<path class="failx" d="M324,316 V384 H887 V318" opacity="0"><animate attributeName="opacity" values="0;0;0.5;0.5;0;0" keyTimes="0;0.905;0.92;0.975;0.99;1" dur="10s" repeatCount="indefinite"/></path>
+</g>
+<g class="still">
+<rect class="bar ok" x="226" y="245" width="198" height="6" rx="3"/>
+<g transform="translate(414,112)"><path class="ck" d="M-5,0 l4,4 l8,-9"/></g>
+<g transform="translate(414,160)"><path class="ck" d="M-5,0 l4,4 l8,-9"/></g>
+<g transform="translate(414,210)"><path class="ck" d="M-5,0 l4,4 l8,-9"/></g>
+<g transform="translate(422,76)"><path class="ck" d="M-5,0 l4,4 l8,-9"/></g>
+<rect class="bar ok" x="560" y="185" width="176" height="6" rx="3"/>
+<g transform="translate(628,168)"><path class="ck" d="M-5,0 l4,4 l8,-9"/></g>
+<rect class="bar ok" x="560" y="245" width="176" height="6" rx="3"/>
+<g transform="translate(628,228)"><path class="ck" d="M-5,0 l4,4 l8,-9"/></g>
+<rect class="bar ok" x="560" y="305" width="176" height="6" rx="3"/>
+<g transform="translate(628,288)"><path class="ck" d="M-5,0 l4,4 l8,-9"/></g>
+<g transform="translate(772,80)"><path class="ck" d="M-5,0 l4,4 l8,-9"/></g>
+<circle class="disc" cx="887" cy="232" r="24"/><path class="on" d="M876,233 l8,9 l15,-17"/><text class="t tp" x="887" y="284" text-anchor="middle">CI passed</text>
+</g>
+</svg>
