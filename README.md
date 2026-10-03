@@ -1,5 +1,10 @@
 <div align="center">
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/ratekit-mark-dark.svg">
+  <img src="assets/ratekit-mark.svg" alt="ratekit logo" width="88">
+</picture>
+
 # ratekit
 
 **Open-source usage metering and rating engine: usage events in, priced charges out.**
@@ -23,28 +28,16 @@ ratekit takes a stream of usage events (an SMS sent, a megabyte used, a minute c
 
 An event enters through a REST endpoint and is written to Kafka. A rating service reads it, prices it against versioned tariffs, takes the charge from the account's prepaid balance and stores it in PostgreSQL. The pieces are separate services so each can scale and fail on its own, and Kafka sits between them so a slow or restarted service never loses an event.
 
-```
- usage source
-      |  POST /v1/events
-      v
- +----------+   key = accountId   +----------- Kafka -----------+
- |  ingest  | ------------------> | topic: usage-events         |
- | producer |                     |  P0 [...]  P1 [...]  P2 [...] |
- +----------+                     +--------------+--------------+
-                                                 |  consumer group
-                                                 v
-                                          +-------------+      +--------------+
-                                          |   rating    | ---> |  PostgreSQL  |
-                                          |  consumer   |      |  accounts    |
-                                          +-------------+      |  tariffs     |
-                                                               |  charges ... |
-                                                               +------+-------+
-                                                                      |
-                                                                      v
-                                                               +-------------+
-                                                               |   billing   |  (planned)
-                                                               +-------------+
-```
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/ratekit-flow-dark.svg">
+  <img src="assets/ratekit-flow.svg" alt="Animated diagram: usage events enter through ingest, are written to the usage-events Kafka topic (three partitions, keyed by account), are read by rating and stored in PostgreSQL. A duplicate event is skipped and an event the account cannot afford is rejected. billing is planned." width="900">
+</picture>
+
+<sub>Events flow from the usage source through ingest and Kafka to rating and PostgreSQL. A redelivered event is skipped; an event the account cannot afford is rejected.</sub>
+
+</div>
 
 ## Modules
 
@@ -300,6 +293,7 @@ Defaults suit the Compose setup. Any property can be overridden with a Spring en
 ## Project layout
 
 ```
+assets/    logo and animated architecture diagram
 common/    shared event contract, money rules, topic names
 ingest/    REST endpoint and Kafka producer
 rating/    Kafka consumer, tariff domain, persistence, Flyway migrations
