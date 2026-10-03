@@ -3,6 +3,10 @@
 Design inputs: `docs/research/2026-10-03-kickoff.md` and the decisions in `AGENTS.md`.
 Stack: Java 21, Spring Boot 3, Maven multi-module, Kafka, PostgreSQL. Three services: `ingest`, `rating`, `billing`. Prepaid hard stop. At-least-once delivery with idempotent consumers. Apache-2.0.
 
+## Status (2026-10-03)
+
+Tasks 0 to 14 are done. What was added beyond the plan, because the work showed it was needed: ADR 0003 (package structure, after a review of the first flat layout), 0004 (retry and dead-letter policy), 0005 (invoicing) and 0006 (metrics); a REST API and an optional scheduler for invoice runs; `BillingPeriod` moved to `common` so rating and billing share one definition of a month; a benchmark of balance-deduction strategies. The CI pipeline ran green on GitHub (build and test, then three image builds). Measured results, with the machine and its limits, are in `docs/perf.md`.
+
 ## How we work
 
 - The owner is learning. One task at a time: explain the why first, implement, show the verify output, then wait for review before the next task.

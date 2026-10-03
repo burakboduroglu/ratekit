@@ -188,6 +188,7 @@ Compose services and their pinned images are described in [`docs/specs/local-dev
 | Rating | An event becomes one charge, a redelivery is rated once, quota is shared across events and resets monthly, the version at event time is used, a failing event leaves no trace |
 | Balance | An affordable event is deducted, an exact-balance event leaves zero, an unaffordable one is rejected and recorded, a free event passes with an empty balance, a rejected event is not revived by a redelivery, 60 racing events never overspend |
 | Billing | Totals are exact sums per meter, a rerun and four concurrent runs create each invoice once, the month includes its first instant and excludes the next month's, a usage is judged in UTC (01:00 in Turkey on 1 October is September), accounts are processed in batches, an open month is refused with 409, and the HTTP API answers with the right statuses |
+| Metrics | Actuator health and Prometheus endpoints answer, event and invoice counters and the rating timer increase with the events, endpoints that reveal configuration or memory stay closed |
 | Failure handling | An unknown account and a missing tariff are dead-lettered without retrying, an unreadable message is dead-lettered with its original bytes, a transient failure is retried until it succeeds, exhausted retries end in the dead-letter topic, and in every case the next event on the partition is still rated |
 
 ## Continuous integration
