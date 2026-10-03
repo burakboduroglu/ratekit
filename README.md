@@ -22,7 +22,7 @@
 
 ratekit takes a stream of usage events (an SMS sent, a megabyte used, a minute called), decides what each one costs under the tariff that applied at that moment, and records the charge. It is the core of a prepaid charging and billing system, kept small enough to read in an afternoon.
 
-> **Status: early development.** Ingest, rating, prepaid balance deduction and failure handling (retry and dead-letter) work end to end. Invoicing, container images and CI are still to come; see [Status](#status).
+> **Status: early development.** Ingest, rating, prepaid balance deduction, failure handling (retry and dead-letter) and monthly invoicing work end to end. Container images, CI and a load test are still to come; see [Status](#status).
 
 ## What it is
 
@@ -46,7 +46,7 @@ An event enters through a REST endpoint and is written to Kafka. A rating servic
 | `common` | Shared library | The event contract (`UsageEvent`), the money rules (`Money`) and topic names. Plain Java, no Spring, so every service agrees on the same types and the same rounding. | none |
 | `ingest` | Producer, the front door | `POST /v1/events` validates an event and writes it to Kafka, keyed by account. Answers `202` only after Kafka has acknowledged the write. Serves the OpenAPI spec and Swagger UI. | 8081 |
 | `rating` | Consumer, the pricing core | Reads events from Kafka, skips duplicates, finds the tariff version in force at the event's time, computes the charge, deducts it from the prepaid balance and stores it. Refuses events the account cannot afford and dead-letters events it cannot process. Owns the database schema. | 8082 |
-| `billing` | Invoicing | Will turn a period's charges into invoices. Currently an empty Spring Boot skeleton. | 8083 (planned) |
+| `billing` | Invoicing | Turns a finished month's charges into one invoice per account, with a line per meter. Safe to run again: an account already invoiced for the month is skipped. Reads `rating`'s `charges` table and owns `invoices` and `invoice_lines`. | 8083 |
 
 ## How an event flows
 
@@ -58,6 +58,8 @@ An event enters through a REST endpoint and is written to Kafka. A rating servic
 6. Otherwise `rating` loads the tariff versions for the meter, picks the one in force at `occurredAt`, adds up what the account already used this month, and prices the event.
 7. `rating` deducts the charge from the account's balance in one atomic statement. If the balance is too low the event is recorded as rejected and nothing is charged; otherwise the charge is stored. Steps 5 to 7 run in one database transaction, so a failure leaves no half-processed event behind.
 8. If processing fails, the failure decides what happens: a transient one (the database blinks) is retried with growing pauses; a permanent one (unknown account, no tariff, unreadable message) goes straight to the `usage-events.dlq` dead-letter topic with the reason. After the last retry the record is dead-lettered too, and the partition moves on. See [ADR 0004](docs/adr/0004-retry-and-dead-letter.md).
+
+Invoicing is a separate step. When a month has ended, `POST /v1/invoice-runs` on `billing` reads that month's charges (judged in UTC), sums them per account and meter in the database, and writes one invoice per account. An account that already has an invoice for the month is skipped, so the run can be repeated safely. See [ADR 0005](docs/adr/0005-invoicing.md).
 
 ## Highlights
 
@@ -71,11 +73,12 @@ An event enters through a REST endpoint and is written to Kafka. A rating servic
 | 6 | **Exact money** | `BigDecimal` only, scale 4, half-even rounding, rounded once per charge. Unit prices keep full precision. See [ADR 0001](docs/adr/0001-money-and-rounding.md). |
 | 7 | **Prepaid hard stop, safe under concurrency** | One `UPDATE ... WHERE balance >= x` checks and deducts in a single step, so racing events can never overspend a balance. A test fires 60 events at a balance that fits 10: exactly 10 are accepted. See [ADR 0002](docs/adr/0002-balance-deduction.md). |
 | 8 | **Nothing is silently lost** | Transient failures are retried with exponential backoff; permanent ones are dead-lettered at once with the original key, the original coordinates and the stack trace in headers. An unreadable message is kept byte for byte. See [ADR 0004](docs/adr/0004-retry-and-dead-letter.md). |
-| 9 | **Safety lives in the database** | `CHECK (balance >= 0)`, unique and foreign keys reject bad data even if application code is wrong. |
-| 10 | **Framework-free domain** | The pricing logic has no Spring, Kafka or JDBC imports; a test fails the build if one appears. |
-| 11 | **Documented API** | OpenAPI spec and Swagger UI generated from the code. |
-| 12 | **Tested against the real thing** | Integration tests run against real Kafka and PostgreSQL containers via Testcontainers. |
-| 13 | **Layered code, one job per class** | Controller, service, repository, mapper, DTO and config each live in their own package; see [Code structure](#code-structure) and [ADR 0003](docs/adr/0003-package-structure.md). |
+| 9 | **Idempotent monthly invoicing** | One invoice per account and month, guaranteed by a unique key and `ON CONFLICT DO NOTHING`: running twice, or four runs at once, still yields each invoice once. Accounts are processed in keyset-paged batches, each invoice in its own transaction. See [ADR 0005](docs/adr/0005-invoicing.md). |
+| 10 | **Safety lives in the database** | `CHECK (balance >= 0)`, unique and foreign keys reject bad data even if application code is wrong. |
+| 11 | **Framework-free domain** | The pricing logic has no Spring, Kafka or JDBC imports; a test fails the build if one appears. |
+| 12 | **Documented API** | OpenAPI spec and Swagger UI generated from the code. |
+| 13 | **Tested against the real thing** | Integration tests run against real Kafka and PostgreSQL containers via Testcontainers. |
+| 14 | **Layered code, one job per class** | Controller, service, repository, mapper, DTO and config each live in their own package; see [Code structure](#code-structure) and [ADR 0003](docs/adr/0003-package-structure.md). |
 
 ## API
 
@@ -99,6 +102,15 @@ An event enters through a REST endpoint and is written to Kafka. A rating servic
 
 Swagger UI is at `http://localhost:8081/swagger-ui.html` and the raw spec at `http://localhost:8081/v3/api-docs` while `ingest` runs.
 
+`billing` (port 8083) has its own API, also documented at `http://localhost:8083/swagger-ui.html`:
+
+| Method | Path | Success | Errors |
+| --- | --- | --- | --- |
+| `POST` | `/v1/invoice-runs` with `{"period": "2026-09"}` | `200` with `{period, invoicesCreated, alreadyInvoiced}` | `400` invalid period, `409` the month has not ended |
+| `GET` | `/v1/invoices/{accountId}?period=2026-09` | `200` with the invoice: lines per meter and the total | `400` invalid period, `404` no such invoice |
+
+Amounts are decimal strings with four digits (`"0.2500"`) so no client rounds them as floating point.
+
 ## Quick start
 
 Requires JDK 21, Maven 3.9+ and a container runtime with Compose (Docker or Podman).
@@ -110,23 +122,30 @@ docker compose up -d                  # or: podman compose up -d
 # 2. Build and test everything
 mvn -B verify
 
-# 3. Run the two services (separate terminals)
+# 3. Run the three services (separate terminals)
 java -jar ingest/target/ingest-0.1.0-SNAPSHOT.jar
 java -jar rating/target/rating-0.1.0-SNAPSHOT.jar
+java -jar billing/target/billing-0.1.0-SNAPSHOT.jar
 
 # 4. Create a demo account and tariff (100 free SMS a month, then 0.05 each)
 docker compose exec -T postgres psql -U ratekit -d ratekit < scripts/seed-demo.sql
 
 # 5. Send events
 curl -X POST localhost:8081/v1/events -H 'Content-Type: application/json' \
-  -d '{"eventId":"e-1","accountId":"acc-demo","meter":"sms","quantity":95,"occurredAt":"2026-10-03T10:00:00Z"}'
+  -d '{"eventId":"e-1","accountId":"acc-demo","meter":"sms","quantity":95,"occurredAt":"2026-09-15T10:00:00Z"}'
 curl -X POST localhost:8081/v1/events -H 'Content-Type: application/json' \
-  -d '{"eventId":"e-2","accountId":"acc-demo","meter":"sms","quantity":10,"occurredAt":"2026-10-03T11:00:00Z"}'
+  -d '{"eventId":"e-2","accountId":"acc-demo","meter":"sms","quantity":10,"occurredAt":"2026-09-15T11:00:00Z"}'
 
 # 6. Look at the charges: e-1 is free, e-2 pays for the 5 units over the quota
 docker compose exec -T postgres psql -U ratekit -d ratekit \
   -c "SELECT event_id, quantity, amount FROM charges ORDER BY id;"
+
+# 7. Invoice September (the month must have ended), then read the invoice
+curl -X POST localhost:8083/v1/invoice-runs -H 'Content-Type: application/json' -d '{"period":"2026-09"}'
+curl "localhost:8083/v1/invoices/acc-demo?period=2026-09"
 ```
+
+The invoice shows one `sms` line of 105 units and a total of `0.2500`. Running step 7 again creates nothing: `{"invoicesCreated":0,"alreadyInvoiced":1}`.
 
 To see what could not be processed, read the dead-letter topic (each record carries the original topic, partition, offset and the exception in its headers):
 
@@ -136,7 +155,7 @@ docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh \
   --formatter-property print.key=true --formatter-property print.headers=true
 ```
 
-`rating` creates its own schema on first start (Flyway). Start it before step 4, which needs the tables. Sending the same `eventId` twice produces one charge.
+`rating` creates its own schema on first start (Flyway), and `billing` adds its two tables next to it with a separate history table. Start both before step 4, which needs the tables. Sending the same `eventId` twice produces one charge.
 
 **Podman:** the integration tests use Testcontainers. Point it at the Podman API socket:
 
@@ -158,22 +177,24 @@ Compose services and their pinned images are described in [`docs/specs/local-dev
 | Ingest | `202` with the event in Kafka, same account in the same partition, `400` on invalid input, OpenAPI served |
 | Rating | An event becomes one charge, a redelivery is rated once, quota is shared across events and resets monthly, the version at event time is used, a failing event leaves no trace |
 | Balance | An affordable event is deducted, an exact-balance event leaves zero, an unaffordable one is rejected and recorded, a free event passes with an empty balance, a rejected event is not revived by a redelivery, 60 racing events never overspend |
+| Billing | Totals are exact sums per meter, a rerun and four concurrent runs create each invoice once, the month includes its first instant and excludes the next month's, a usage is judged in UTC (01:00 in Turkey on 1 October is September), accounts are processed in batches, an open month is refused with 409, and the HTTP API answers with the right statuses |
 | Failure handling | An unknown account and a missing tariff are dead-lettered without retrying, an unreadable message is dead-lettered with its original bytes, a transient failure is retried until it succeeds, exhausted retries end in the dead-letter topic, and in every case the next event on the partition is still rated |
 
 ## Status
 
 | Done | Next |
 | --- | --- |
-| Maven multi-module build | Invoice run in `billing` |
-| PostgreSQL and Kafka via Compose | Dockerfiles for all services |
-| Event contract and money rules | GitHub Actions CI/CD |
-| `ingest` with OpenAPI | Load test and observability |
+| Maven multi-module build | Dockerfiles for all services |
+| PostgreSQL and Kafka via Compose | GitHub Actions CI/CD |
+| Event contract and money rules | Load test and observability |
+| `ingest` with OpenAPI | |
 | Versioned tariffs and three price models | |
 | `rating` consumer, idempotent, with charges stored | |
 | Prepaid hard stop, atomic and concurrency-safe | |
 | Retry with backoff and a dead-letter topic | |
+| `billing`: idempotent monthly invoices | |
 
-Known limits today: a transient failure can hold up its partition for up to 7.5 seconds (configurable). Dead letters are inspected and replayed by hand. Events that arrive out of order are rated in arrival order. Rejections for insufficient balance are not reported back to the sender, who already received `202`.
+Known limits today: a transient failure can hold up its partition for up to 7.5 seconds (configurable). Dead letters are inspected and replayed by hand. Events that arrive out of order are rated in arrival order. Rejections for insufficient balance are not reported back to the sender, who already received `202`. A charge rated after its month was invoiced is not added to that invoice (an issued invoice is never rewritten). `billing` reads `rating`'s `charges` table directly, so the two services share a database. An invoice run is synchronous.
 
 ## Code structure
 
@@ -200,8 +221,19 @@ rating/  io.github.burakboduroglu.ratekit.rating
   domain/       PriceModel, FlatPrice, TieredPrice, FreeQuotaThenFlat,
                 Tariff, TariffBook, Rater, Charge, BillingPeriod, NoTariffException
 
+billing/  io.github.burakboduroglu.ratekit.billing
+  controller/   InvoiceRunController, InvoiceController
+  dto/          InvoiceRunRequest, InvoiceRunResponse, InvoiceResponse, InvoiceLineResponse
+  mapper/       InvoiceMapper, BillingPeriodMapper
+  service/      InvoiceRunService, InvoiceService
+  repository/   ChargeUsageRepository, InvoiceRepository, UsageRow
+  scheduler/    InvoiceScheduler
+  config/       BillingConfig, BillingProperties
+  exception/    InvalidPeriodException, PeriodNotClosedException, InvoiceNotFoundException, ApiExceptionHandler
+  domain/       Invoice, InvoiceLine
+
 common/  io.github.burakboduroglu.ratekit.common
-                UsageEvent, Money, Topics
+                UsageEvent, Money, BillingPeriod, Topics
 ```
 
 | Layer | Responsibility | Rule |
@@ -262,6 +294,15 @@ SOLID, as applied here:
 | `charges` | One priced charge per processed event | Foreign key to `processed_events`, unique `(account_id, event_id)` |
 | `rejected_events` | Events refused for lack of balance, with what they would have cost | Foreign key to `processed_events` |
 
+`billing` adds two tables of its own, with its own Flyway history (`billing_schema_history`), in the same database:
+
+| Table | Purpose | Key rule |
+| --- | --- | --- |
+| `invoices` | One invoice per account and month, with the total | Unique `(account_id, period_start)`: the guard that makes a run repeatable |
+| `invoice_lines` | One line per meter on an invoice | Primary key `(invoice_id, meter)` |
+
+`billing` only reads `charges` (account_id, meter, quantity, amount, occurred_at); those columns are a contract between the two services (see [ADR 0005](docs/adr/0005-invoicing.md)).
+
 Tariff parameters are stored as JSON, one shape per model:
 
 | Model | `params` |
@@ -278,16 +319,19 @@ Defaults suit the Compose setup. Any property can be overridden with a Spring en
 
 | Property | Default | Service |
 | --- | --- | --- |
-| `server.port` | `8081` / `8082` | ingest / rating |
+| `server.port` | `8081` / `8082` / `8083` | ingest / rating / billing |
 | `spring.kafka.bootstrap-servers` | `localhost:9092` | both |
-| `spring.datasource.url` | `jdbc:postgresql://localhost:5432/ratekit` | rating |
-| `spring.datasource.username`, `password` | `ratekit` | rating |
+| `spring.datasource.url` | `jdbc:postgresql://localhost:5432/ratekit` | rating, billing |
+| `spring.datasource.username`, `password` | `ratekit` | rating, billing |
 | `spring.kafka.consumer.group-id` | `ratekit-rating` | rating |
 | `spring.kafka.consumer.auto-offset-reset` | `earliest` | rating |
 | `ratekit.rating.retry.max-retries` | `4` | rating |
 | `ratekit.rating.retry.initial-interval-ms` | `500` | rating |
 | `ratekit.rating.retry.multiplier` | `2.0` | rating |
 | `ratekit.rating.retry.max-interval-ms` | `5000` | rating |
+| `ratekit.billing.batch-size` | `500` | billing |
+| `ratekit.billing.scheduler.enabled` | `false` | billing |
+| `ratekit.billing.scheduler.cron` | `0 0 2 1 * *` (02:00 UTC on the 1st) | billing |
 | `spring.kafka.producer.acks` | `all`, with idempotent producer | ingest |
 
 ## Project layout
@@ -297,13 +341,13 @@ assets/    logo and animated architecture diagram
 common/    shared event contract, money rules, topic names
 ingest/    REST endpoint and Kafka producer
 rating/    Kafka consumer, tariff domain, persistence, Flyway migrations
-billing/   invoicing (skeleton)
+billing/   monthly invoicing: REST, scheduler, own Flyway tables
 docs/      research, implementation plan, ADRs, specs
 scripts/   demo data
 compose.yaml
 ```
 
-Design decisions are recorded as ADRs in [`docs/adr/`](docs/adr/): money and rounding, balance deduction, package structure, retry and dead-letter policy. The implementation plan is in [`docs/plans/`](docs/plans/).
+Design decisions are recorded as ADRs in [`docs/adr/`](docs/adr/): money and rounding, balance deduction, package structure, retry and dead-letter policy, invoicing. The implementation plan is in [`docs/plans/`](docs/plans/).
 
 ## License
 
