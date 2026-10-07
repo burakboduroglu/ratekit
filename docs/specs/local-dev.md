@@ -46,7 +46,7 @@ One `Dockerfile` at the repository root builds any service: `--build-arg SERVICE
 
 ## Start order and health
 
-`depends_on` with `condition: service_healthy` makes the order explicit: PostgreSQL and Kafka first, then `ingest` and `rating`, and `billing` last because it reads the `charges` table that `rating`'s migration creates. The services' healthcheck opens their port with bash (`/dev/tcp`), because the JRE image has no `curl`. `restart: on-failure` covers a slow dependency.
+`depends_on` with `condition: service_healthy` makes the order explicit: PostgreSQL and Kafka first, then `ingest` and `rating`, and `billing` last because it reads the `charges` table that `rating`'s migration creates. The services' healthcheck calls `/actuator/health` with `curl` (present in the `eclipse-temurin` JRE image) and requires `"status":"UP"`, so a service counts as healthy only when Spring reports it ready, including its database connection, not merely when its port is open. `restart: on-failure` covers a slow dependency.
 
 ## Memory (read this)
 
