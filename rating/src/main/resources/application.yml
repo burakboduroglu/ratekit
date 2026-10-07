@@ -44,6 +44,10 @@ ratekit:
       initial-interval-ms: 500
       multiplier: 2.0
       max-interval-ms: 5000
+    tariff-cache:
+      # how long a meter's tariff versions stay in memory; a version added through this instance's
+      # API is seen at once, another instance may need up to this long (ADR 0012). PT0S turns it off
+      ttl: PT30S
 
 management:
   endpoints:

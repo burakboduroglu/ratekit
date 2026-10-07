@@ -308,13 +308,13 @@ rating/  io.github.burakboduroglu.ratekit.rating
   dto/          CreateAccountRequest, AccountResponse, TopUpRequest, TopUpResponse,
                 TariffRequest, TariffResponse
   messaging/    UsageEventListener, DeadLetterProducer
-  service/      RatingService, AccountService, TopUpService, TariffService
+  service/      RatingService, AccountService, TopUpService, TariffService, TariffBookCache
   repository/   AccountRepository, ChargeRepository, ProcessedEventRepository,
                 RejectedEventRepository, TariffRepository, TariffRow, TopUpRepository,
                 UsageCounterRepository
   mapper/       TariffMapper, TariffApiMapper, AccountMapper
   config/       KafkaTopicConfig, DeadLetterConfig, ConsumerErrorHandlingConfig, RetryProperties,
-                ClockConfig
+                ClockConfig, TariffCacheConfig, TariffCacheProperties
   exception/    UnknownAccountException, InvalidTariffException, AccountNotFoundException,
                 AccountAlreadyExistsException, TopUpConflictException, TariffInThePastException,
                 TariffVersionExistsException, ApiExceptionHandler
@@ -463,6 +463,7 @@ Defaults suit the Compose setup. Any property can be overridden with a Spring en
 | `ratekit.rating.retry.initial-interval-ms` | `500` | rating |
 | `ratekit.rating.retry.multiplier` | `2.0` | rating |
 | `ratekit.rating.retry.max-interval-ms` | `5000` | rating |
+| `ratekit.rating.tariff-cache.ttl` | `PT30S` (`PT0S` turns the cache off) | rating |
 | `ratekit.billing.batch-size` | `500` | billing |
 | `ratekit.billing.scheduler.enabled` | `false` | billing |
 | `ratekit.billing.scheduler.cron` | `0 0 2-23 1 * *` (hourly from 02:00 UTC on the 1st; a run that finds rating behind is skipped) | billing |

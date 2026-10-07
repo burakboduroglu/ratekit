@@ -126,7 +126,37 @@ class TariffApiIntegrationTest {
         assertThat(http.getForEntity("/v1/tariffs?meter=none-" + UUID.randomUUID(), String.class).getBody()).isEqualTo("[]");
     }
 
+    @Test
+    void aNewVersionIsUsedAtOnceEvenWhileTheOldOneIsCached() {
+        String meter = meter();
+        jdbc.update("INSERT INTO tariffs (meter, model, effective_from, params) "
+                + "VALUES (?, 'FLAT', '2026-01-01T00:00:00Z'::timestamptz, '{\"rate\":\"0.05\"}'::jsonb)", meter);
+        String account = "acc-" + UUID.randomUUID();
+        post("/v1/accounts", "{\"accountId\":\"" + account + "\"}");
+        post("/v1/accounts/" + account + "/top-ups", "{\"topUpId\":\"t1\",\"amount\":\"10\"}");
+
+        sendEvent(account, "before", meter, Instant.now());
+        awaitChargeOf(account, "before", "0.05");           // rating has now cached the 0.05 version
+        assertThat(addTariff(meter, "FLAT", null, "{\"rate\":\"0.08\"}").getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        sendEvent(account, "after", meter, Instant.now().plusSeconds(1));
+
+        awaitChargeOf(account, "after", "0.08");            // well inside the 30 s TTL
+    }
+
     // ---- helpers ----
+
+    private void sendEvent(String account, String eventId, String meter, Instant occurredAt) {
+        kafka.send(Topics.USAGE_EVENTS, account, """
+                {"eventId":"%s","accountId":"%s","meter":"%s","quantity":1,"occurredAt":"%s"}"""
+                .formatted(eventId, account, meter, occurredAt));
+    }
+
+    private void awaitChargeOf(String account, String eventId, String amount) {
+        await().atMost(Duration.ofSeconds(30)).ignoreExceptions().untilAsserted(() -> assertThat(
+                jdbc.queryForObject("SELECT amount FROM charges WHERE account_id = ? AND event_id = ?",
+                        BigDecimal.class, account, eventId))
+                .isEqualByComparingTo(amount));
+    }
 
     private static String meter() {
         return "m-" + UUID.randomUUID();

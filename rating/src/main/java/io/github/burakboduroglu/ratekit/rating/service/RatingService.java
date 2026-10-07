@@ -10,7 +10,6 @@ import io.github.burakboduroglu.ratekit.rating.repository.AccountRepository;
 import io.github.burakboduroglu.ratekit.rating.repository.ChargeRepository;
 import io.github.burakboduroglu.ratekit.rating.repository.ProcessedEventRepository;
 import io.github.burakboduroglu.ratekit.rating.repository.RejectedEventRepository;
-import io.github.burakboduroglu.ratekit.rating.repository.TariffRepository;
 import io.github.burakboduroglu.ratekit.rating.repository.UsageCounterRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,13 +33,13 @@ public class RatingService {
     private static final Logger log = LoggerFactory.getLogger(RatingService.class);
 
     private final ProcessedEventRepository processed;
-    private final TariffRepository tariffs;
+    private final TariffBookCache tariffs;
     private final ChargeRepository charges;
     private final AccountRepository accounts;
     private final RejectedEventRepository rejected;
     private final UsageCounterRepository usage;
 
-    RatingService(ProcessedEventRepository processed, TariffRepository tariffs, ChargeRepository charges,
+    RatingService(ProcessedEventRepository processed, TariffBookCache tariffs, ChargeRepository charges,
                   AccountRepository accounts, RejectedEventRepository rejected, UsageCounterRepository usage) {
         this.processed = processed;
         this.tariffs = tariffs;
@@ -59,7 +58,7 @@ public class RatingService {
             log.info("duplicate event ignored: account={} event={}", event.accountId(), event.eventId());
             return Outcome.DUPLICATE;
         }
-        TariffBook book = new TariffBook(tariffs.findByMeter(event.meter()));
+        TariffBook book = tariffs.bookFor(event.meter(), event.occurredAt());
         BillingPeriod period = BillingPeriod.containing(event.occurredAt());
         long usedBefore = usage.unitsUsed(event.accountId(), event.meter(), period);
         Charge charge = new Rater(book).rate(event, usedBefore);

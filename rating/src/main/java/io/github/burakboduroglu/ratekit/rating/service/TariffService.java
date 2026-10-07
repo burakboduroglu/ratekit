@@ -11,6 +11,8 @@ import java.time.Instant;
 import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * Adds tariff versions and lists them.
@@ -26,11 +28,13 @@ public class TariffService {
     private final TariffRepository tariffs;
     private final TariffMapper mapper;
     private final Clock clock;
+    private final TariffBookCache cache;
 
-    public TariffService(TariffRepository tariffs, TariffMapper mapper, Clock clock) {
+    public TariffService(TariffRepository tariffs, TariffMapper mapper, Clock clock, TariffBookCache cache) {
         this.tariffs = tariffs;
         this.mapper = mapper;
         this.clock = clock;
+        this.cache = cache;
     }
 
     /** @param effectiveFrom when the version starts; {@code null} means now */
@@ -48,6 +52,14 @@ public class TariffService {
         }
         long id = tariffs.insertIfAbsent(meter, model, from, paramsJson)
                 .orElseThrow(() -> new TariffVersionExistsException(meter, from));
+        // after the commit, not now: evicting earlier would let the listener reload the old versions
+        // before the new row is visible, and keep them for a whole TTL
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                cache.evict(meter);
+            }
+        });
         return tariffs.rowsByMeter(meter).stream().filter(t -> t.id() == id).findFirst().orElseThrow();
     }
 
