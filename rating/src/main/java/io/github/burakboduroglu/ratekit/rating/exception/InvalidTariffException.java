@@ -9,4 +9,9 @@ public class InvalidTariffException extends RuntimeException {
     public InvalidTariffException(long tariffId, String meter, Throwable cause) {
         super("tariff " + tariffId + " for meter '" + meter + "' is invalid: " + cause.getMessage(), cause);
     }
+
+    /** For a tariff that is being created and has no id yet. */
+    public InvalidTariffException(String meter, Throwable cause) {
+        super("tariff for meter '" + meter + "' is invalid: " + cause.getMessage(), cause);
+    }
 }

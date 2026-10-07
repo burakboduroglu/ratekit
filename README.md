@@ -114,7 +114,16 @@ Swagger UI is at `http://localhost:8081/swagger-ui.html` and the raw spec at `ht
 | `GET` | `/v1/accounts/{accountId}` | `200` with `{accountId, balance}` | `404` no such account |
 | `POST` | `/v1/accounts/{accountId}/top-ups` with `{"topUpId": "tu-1", "amount": "10.00"}` | `201` credited, or `200` if this `topUpId` was already credited (nothing changes); both return the new balance | `400` amount not positive or more than 4 decimals, `404` no such account, `409` `topUpId` reused with another amount |
 
-Money enters a balance only through a top-up, and the caller-chosen `topUpId` makes a retry safe ([ADR 0008](docs/adr/0008-accounts-and-top-ups.md)). There is no authentication yet: do not expose these ports.
+Money enters a balance only through a top-up, and the caller-chosen `topUpId` makes a retry safe ([ADR 0008](docs/adr/0008-accounts-and-top-ups.md)).
+
+Tariffs are managed on the same port:
+
+| Method | Path | Success | Errors |
+| --- | --- | --- | --- |
+| `POST` | `/v1/tariffs` with `{"meter": "sms", "model": "FREE_QUOTA_THEN_FLAT", "effectiveFrom": "2026-11-01T00:00:00Z", "params": {"freeUnits": 100, "rate": "0.05"}}` | `201` with the stored version; `effectiveFrom` may be omitted for "now" | `400` unknown model or parameters rating could not price with, `409` the meter already has a version starting at that instant, `422` `effectiveFrom` is in the past |
+| `GET` | `/v1/tariffs?meter=sms` | `200` with the meter's versions, oldest first | |
+
+A version is never edited: a price change is a new version, starting now or later. New parameters are checked with the same code rating prices with, so a tariff rating could not read never gets in ([ADR 0009](docs/adr/0009-tariff-versions-api.md)). There is no authentication yet: do not expose these ports.
 
 `billing` (port 8083) has its own API, also documented at `http://localhost:8083/swagger-ui.html`:
 
@@ -135,7 +144,9 @@ Requires a container runtime with Compose (Docker or Podman). To build and test 
 # 1. Start the stack (the first build takes a few minutes)
 docker compose up -d --build          # or: podman compose up -d --build
 
-# 2. Create a demo tariff (100 free SMS a month, then 0.05 each), then open an account and top it up
+# 2. Create a demo tariff (100 free SMS a month, then 0.05 each), then open an account and top it up.
+#    The tariff comes from SQL because it starts on 1 January, so it also prices last month's usage in
+#    the invoicing demo below; the API only adds versions that start now or later (POST /v1/tariffs).
 docker compose exec -T postgres psql -U ratekit -d ratekit < scripts/seed-demo.sql
 curl -X POST localhost:8082/v1/accounts -H 'Content-Type: application/json' -d '{"accountId":"acc-demo"}'
 curl -X POST localhost:8082/v1/accounts/acc-demo/top-ups -H 'Content-Type: application/json' \
@@ -288,16 +299,19 @@ ingest/  io.github.burakboduroglu.ratekit.ingest
   exception/    EventPublishException, EventTimeOutOfRangeException, ApiExceptionHandler
 
 rating/  io.github.burakboduroglu.ratekit.rating
-  controller/   AccountController
-  dto/          CreateAccountRequest, AccountResponse, TopUpRequest, TopUpResponse
+  controller/   AccountController, TariffController
+  dto/          CreateAccountRequest, AccountResponse, TopUpRequest, TopUpResponse,
+                TariffRequest, TariffResponse
   messaging/    UsageEventListener, DeadLetterProducer
-  service/      RatingService, AccountService, TopUpService
+  service/      RatingService, AccountService, TopUpService, TariffService
   repository/   AccountRepository, ChargeRepository, ProcessedEventRepository,
-                RejectedEventRepository, TariffRepository, TopUpRepository
-  mapper/       TariffMapper, AccountMapper
-  config/       KafkaTopicConfig, DeadLetterConfig, ConsumerErrorHandlingConfig, RetryProperties
+                RejectedEventRepository, TariffRepository, TariffRow, TopUpRepository
+  mapper/       TariffMapper, TariffApiMapper, AccountMapper
+  config/       KafkaTopicConfig, DeadLetterConfig, ConsumerErrorHandlingConfig, RetryProperties,
+                ClockConfig
   exception/    UnknownAccountException, InvalidTariffException, AccountNotFoundException,
-                AccountAlreadyExistsException, TopUpConflictException, ApiExceptionHandler
+                AccountAlreadyExistsException, TopUpConflictException, TariffInThePastException,
+                TariffVersionExistsException, ApiExceptionHandler
   domain/       PriceModel, FlatPrice, TieredPrice, FreeQuotaThenFlat,
                 Tariff, TariffBook, Rater, Charge, Account, NoTariffException
 

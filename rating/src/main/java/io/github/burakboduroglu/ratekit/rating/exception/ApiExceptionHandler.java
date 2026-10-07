@@ -14,8 +14,19 @@ public class ApiExceptionHandler {
         return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
     }
 
-    @ExceptionHandler({AccountAlreadyExistsException.class, TopUpConflictException.class})
+    @ExceptionHandler({AccountAlreadyExistsException.class, TopUpConflictException.class, TariffVersionExistsException.class})
     public ProblemDetail conflict(RuntimeException e) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
+    }
+
+    @ExceptionHandler(InvalidTariffException.class)
+    public ProblemDetail invalidTariff(InvalidTariffException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
+    }
+
+    /** 422: the tariff itself is valid, but it cannot start at that time. */
+    @ExceptionHandler(TariffInThePastException.class)
+    public ProblemDetail tariffInThePast(TariffInThePastException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, e.getMessage());
     }
 }

@@ -74,6 +74,24 @@ class TariffMapperTest {
                 .hasCauseInstanceOf(RuntimeException.class);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "{\"freeUnits\":\"abc\",\"rate\":\"0.05\"}",   // text, used to become 0
+            "{\"freeUnits\":1.5,\"rate\":\"0.05\"}",         // fraction, used to become 1
+            "{\"rate\":\"0.05\"}"})                             // missing
+    void refusesAFreeQuotaThatIsNotAWholeNumberInsteadOfGuessing(String params) {
+        assertThatThrownBy(() -> mapper.toModel("FREE_QUOTA_THEN_FLAT", params))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("freeUnits must be a whole number");
+    }
+
+    @Test
+    void refusesATierBoundGivenAsText() {
+        assertThatThrownBy(() -> mapper.toModel("TIERED",
+                "{\"tiers\":[{\"upTo\":\"100\",\"rate\":\"0.10\"},{\"upTo\":null,\"rate\":\"0.05\"}]}"))
+                .hasMessageContaining("upTo must be a whole number");
+    }
+
     @Test
     void reportsInvalidTiersAsAnInvalidTariff() {
         String descending = "{\"tiers\":[{\"upTo\":100,\"rate\":\"0.10\"},{\"upTo\":50,\"rate\":\"0.05\"},"

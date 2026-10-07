@@ -30,4 +30,4 @@ The balance model is prepaid with a hard stop, yet the only way to open an accou
 - A test sends the same top-up ten times concurrently and gets exactly one `201`, nine `200` and one credit; a deliberate mutant that credits on every request fails it.
 - There is **no authentication**. Anyone who reaches port 8082 can open accounts and add money. Acceptable for a local learning project, not for a deployment; it is on the list of known gaps.
 - `rating` now serves HTTP traffic next to its Kafka consumer. Both share one connection pool; under heavy API load that could slow rating. To be measured if it ever matters.
-- Tariffs still come from SQL. Managing them over the API is the next step (1b).
+- Tariffs are managed over the API since ADR 0009.

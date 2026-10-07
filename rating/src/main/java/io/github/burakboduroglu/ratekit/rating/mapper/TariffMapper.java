@@ -48,7 +48,7 @@ public class TariffMapper {
         JsonNode params = read(paramsJson);
         return switch (name) {
             case "FLAT" -> new FlatPrice(rate(params));
-            case "FREE_QUOTA_THEN_FLAT" -> new FreeQuotaThenFlat(params.get("freeUnits").asLong(), rate(params));
+            case "FREE_QUOTA_THEN_FLAT" -> new FreeQuotaThenFlat(wholeNumber(params, "freeUnits"), rate(params));
             case "TIERED" -> new TieredPrice(tiers(params.get("tiers")));
             default -> throw new IllegalStateException("unknown price model " + name);
         };
@@ -58,9 +58,18 @@ public class TariffMapper {
         List<TieredPrice.Tier> result = new ArrayList<>();
         for (JsonNode tier : tiers) {
             JsonNode upTo = tier.get("upTo");
-            result.add(new TieredPrice.Tier(upTo == null || upTo.isNull() ? null : upTo.asLong(), rate(tier)));
+            result.add(new TieredPrice.Tier(upTo == null || upTo.isNull() ? null : wholeNumber(tier, "upTo"), rate(tier)));
         }
         return result;
+    }
+
+    /** asLong() would quietly turn "abc" or 1.5 into a number; a price must not be guessed. */
+    private static long wholeNumber(JsonNode node, String field) {
+        JsonNode value = node.get(field);
+        if (value == null || !value.isIntegralNumber()) {
+            throw new IllegalArgumentException(field + " must be a whole number, got " + value);
+        }
+        return value.asLong();
     }
 
     private static BigDecimal rate(JsonNode node) {
