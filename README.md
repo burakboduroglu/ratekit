@@ -193,7 +193,7 @@ java -jar rating/target/rating-0.1.0-SNAPSHOT.jar
 java -jar billing/target/billing-0.1.0-SNAPSHOT.jar
 ```
 
-`rating` creates its own schema on first start (Flyway), and `billing` adds its two tables next to it with a separate history table; in the container setup `billing` waits for `rating` to be healthy for that reason.
+`rating` creates its own schema on first start (Flyway), and `billing` adds its two tables next to it with a separate history table. Either may migrate an empty database first ([ADR 0013](docs/adr/0013-migration-order.md)); in the container setup `billing` still waits for `rating` to be healthy because it reads `rating`'s `charges` table.
 
 **Memory:** the full stack needs about 1.8 GB. Podman's default VM has 2 GB, which is too tight (the kernel killed Kafka); give it 4 GB with `podman machine set --memory 4096`. Even then, stop the stack before `mvn verify` if the VM is small, because the integration tests start their own Kafka and PostgreSQL. Details in [`docs/specs/local-dev.md`](docs/specs/local-dev.md).
 

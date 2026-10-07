@@ -8,6 +8,11 @@ spring:
     url: jdbc:postgresql://localhost:5432/ratekit
     username: ratekit
     password: ratekit
+  flyway:
+    # billing migrates the same database with its own history table; if it starts first the schema
+    # is not empty, so baseline at 0 and still run V1 onwards (ADR 0013)
+    baseline-on-migrate: true
+    baseline-version: 0
   kafka:
     bootstrap-servers: localhost:9092
     consumer:
