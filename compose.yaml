@@ -53,6 +53,8 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:19092
       # how long after a month ends its usage is still accepted (ADR 0007); widen it only for a demo
       RATEKIT_INGEST_EVENTTIME_LATEARRIVALGRACE: ${LATE_ARRIVAL_GRACE:-PT1H}
+      # shared API key for /v1 (ADR 0015); override with RATEKIT_API_KEY
+      RATEKIT_SECURITY_APIKEY: ${RATEKIT_API_KEY:-local-dev-key}
       JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=50
     mem_limit: 512m
     ports:
@@ -81,6 +83,8 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:19092
       # listener threads; at most one per partition is useful (the topic has 3)
       SPRING_KAFKA_LISTENER_CONCURRENCY: ${RATING_CONCURRENCY:-1}
+      # shared API key for /v1 (ADR 0015); override with RATEKIT_API_KEY
+      RATEKIT_SECURITY_APIKEY: ${RATEKIT_API_KEY:-local-dev-key}
       JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=50
     mem_limit: 512m
     ports:
@@ -110,6 +114,8 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ratekit
       # billing asks Kafka how far rating has got before it invoices a month (ADR 0010)
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:19092
+      # shared API key for /v1 (ADR 0015); override with RATEKIT_API_KEY
+      RATEKIT_SECURITY_APIKEY: ${RATEKIT_API_KEY:-local-dev-key}
       JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=50
     mem_limit: 512m
     ports:

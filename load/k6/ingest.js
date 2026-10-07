@@ -3,7 +3,8 @@
 //
 //   podman run --rm -i --network ratekit_default -e TARGET=http://ingest:8081 grafana/k6:2.3.0 run - < load/k6/ingest.js
 //
-// Environment: TARGET (default http://ingest:8081), RUN (makes event ids unique), STAGE_SECONDS
+// Environment: TARGET (default http://ingest:8081), API_KEY (default local-dev-key, as in compose),
+// RUN (makes event ids unique), STAGE_SECONDS
 // (default 10), RATES (comma separated target rates, default 200,400,800,1200,1600).
 import http from 'k6/http';
 import { check } from 'k6';
@@ -30,7 +31,7 @@ export const options = {
   },
 };
 
-const headers = { 'Content-Type': 'application/json' };
+const headers = { 'Content-Type': 'application/json', 'X-Api-Key': __ENV.API_KEY || 'local-dev-key' };
 
 export default function () {
   const n = `${RUN}-${__VU}-${__ITER}`;

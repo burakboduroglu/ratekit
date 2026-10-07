@@ -14,3 +14,4 @@ An ADR records one decision: the context, what was decided, the alternatives and
 | [0008](0008-accounts-and-top-ups.md) | rating opens accounts and takes top-ups over HTTP; money enters only through an idempotent top-up recorded in a ledger table | accepted |
 | [0009](0009-tariff-versions-api.md) | Tariff versions are added over HTTP, checked with rating's own parser, and may not start in the past | accepted |
 | [0010](0010-invoice-after-rating-caught-up.md) | billing invoices a month only after rating has committed every usage event written before the late-arrival grace ended | accepted |
+| [0015](0015-shared-api-key.md) | When `ratekit.security.api-key` is set, every `/v1` endpoint requires it in `X-Api-Key`; actuator and Swagger stay open | accepted |

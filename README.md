@@ -123,7 +123,7 @@ Tariffs are managed on the same port:
 | `POST` | `/v1/tariffs` with `{"meter": "sms", "model": "FREE_QUOTA_THEN_FLAT", "effectiveFrom": "2026-11-01T00:00:00Z", "params": {"freeUnits": 100, "rate": "0.05"}}` | `201` with the stored version; `effectiveFrom` may be omitted for "now" | `400` unknown model or parameters rating could not price with, `409` the meter already has a version starting at that instant, `422` `effectiveFrom` is in the past |
 | `GET` | `/v1/tariffs?meter=sms` | `200` with the meter's versions, oldest first | |
 
-A version is never edited: a price change is a new version, starting now or later. New parameters are checked with the same code rating prices with, so a tariff rating could not read never gets in ([ADR 0009](docs/adr/0009-tariff-versions-api.md)). There is no authentication yet: do not expose these ports.
+A version is never edited: a price change is a new version, starting now or later. New parameters are checked with the same code rating prices with, so a tariff rating could not read never gets in ([ADR 0009](docs/adr/0009-tariff-versions-api.md)). Every `/v1` call on the three services needs the shared key in an `X-Api-Key` header once `ratekit.security.api-key` is set, which compose does (`local-dev-key` unless `RATEKIT_API_KEY` says otherwise); a missing or wrong key gets `401`. Actuator and Swagger stay open ([ADR 0015](docs/adr/0015-shared-api-key.md)).
 
 `billing` (port 8083) has its own API, also documented at `http://localhost:8083/swagger-ui.html`:
 
@@ -143,26 +143,27 @@ Requires a container runtime with Compose (Docker or Podman). To build and test 
 ```sh
 # 1. Start the stack (the first build takes a few minutes)
 docker compose up -d --build          # or: podman compose up -d --build
+KEY=local-dev-key                     # the API key compose sets by default (RATEKIT_API_KEY overrides it)
 
 # 2. Create a demo tariff (100 free SMS a month, then 0.05 each), then open an account and top it up.
 #    The tariff comes from SQL because it starts on 1 January, so it also prices last month's usage in
 #    the invoicing demo below; the API only adds versions that start now or later (POST /v1/tariffs).
 docker compose exec -T postgres psql -U ratekit -d ratekit < scripts/seed-demo.sql
-curl -X POST localhost:8082/v1/accounts -H 'Content-Type: application/json' -d '{"accountId":"acc-demo"}'
-curl -X POST localhost:8082/v1/accounts/acc-demo/top-ups -H 'Content-Type: application/json' \
+curl -H "X-Api-Key: $KEY" -X POST localhost:8082/v1/accounts -H 'Content-Type: application/json' -d '{"accountId":"acc-demo"}'
+curl -H "X-Api-Key: $KEY" -X POST localhost:8082/v1/accounts/acc-demo/top-ups -H 'Content-Type: application/json' \
   -d '{"topUpId":"tu-1","amount":"100.00"}'
 
 # 3. Send events that happen now
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-curl -X POST localhost:8081/v1/events -H 'Content-Type: application/json' \
+curl -H "X-Api-Key: $KEY" -X POST localhost:8081/v1/events -H 'Content-Type: application/json' \
   -d '{"eventId":"e-1","accountId":"acc-demo","meter":"sms","quantity":95,"occurredAt":"'$NOW'"}'
-curl -X POST localhost:8081/v1/events -H 'Content-Type: application/json' \
+curl -H "X-Api-Key: $KEY" -X POST localhost:8081/v1/events -H 'Content-Type: application/json' \
   -d '{"eventId":"e-2","accountId":"acc-demo","meter":"sms","quantity":10,"occurredAt":"'$NOW'"}'
 
 # 4. Look at the charges: e-1 is free, e-2 pays for the 5 units over the quota, so the balance is 99.7500
 docker compose exec -T postgres psql -U ratekit -d ratekit \
   -c "SELECT event_id, quantity, amount FROM charges ORDER BY id;"
-curl localhost:8082/v1/accounts/acc-demo
+curl -H "X-Api-Key: $KEY" localhost:8082/v1/accounts/acc-demo
 ```
 
 Sending the same `eventId` twice produces one charge. An event dated next week, or last month, gets `422`.
@@ -172,11 +173,11 @@ Sending the same `eventId` twice produces one charge. An event dated next week, 
 ```sh
 LATE_ARRIVAL_GRACE=P62D docker compose up -d ingest       # demo only; the default is PT1H
 LAST=$(date -u -v1d -v-1m +%Y-%m)                         # GNU date: date -u -d "$(date -u +%Y-%m-01) -1 month" +%Y-%m
-curl -X POST localhost:8081/v1/events -H 'Content-Type: application/json' \
+curl -H "X-Api-Key: $KEY" -X POST localhost:8081/v1/events -H 'Content-Type: application/json' \
   -d '{"eventId":"e-3","accountId":"acc-demo","meter":"sms","quantity":105,"occurredAt":"'$LAST'-15T10:00:00Z"}'
 sleep 2                                                   # billing only waits for usage written before 01:00 on the 1st
-curl -X POST localhost:8083/v1/invoice-runs -H 'Content-Type: application/json' -d '{"period":"'$LAST'"}'
-curl "localhost:8083/v1/invoices/acc-demo?period=$LAST"
+curl -H "X-Api-Key: $KEY" -X POST localhost:8083/v1/invoice-runs -H 'Content-Type: application/json' -d '{"period":"'$LAST'"}'
+curl -H "X-Api-Key: $KEY" "localhost:8083/v1/invoices/acc-demo?period=$LAST"
 docker compose up -d ingest                               # back to the one-hour window
 ```
 
@@ -452,6 +453,7 @@ Defaults suit the Compose setup. Any property can be overridden with a Spring en
 | `spring.kafka.consumer.auto-offset-reset` | `earliest` | rating |
 | `ratekit.ingest.event-time.max-future-skew` | `PT5M` | ingest |
 | `ratekit.ingest.event-time.late-arrival-grace` | `PT1H` (compose: `LATE_ARRIVAL_GRACE`) | ingest |
+| `ratekit.security.api-key` | unset: no key required (compose: `local-dev-key`, override with `RATEKIT_API_KEY`) | ingest, rating, billing |
 | `ratekit.rating.retry.max-retries` | `4` | rating |
 | `ratekit.rating.retry.initial-interval-ms` | `500` | rating |
 | `ratekit.rating.retry.multiplier` | `2.0` | rating |
