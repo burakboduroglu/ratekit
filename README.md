@@ -310,7 +310,8 @@ rating/  io.github.burakboduroglu.ratekit.rating
   messaging/    UsageEventListener, DeadLetterProducer
   service/      RatingService, AccountService, TopUpService, TariffService
   repository/   AccountRepository, ChargeRepository, ProcessedEventRepository,
-                RejectedEventRepository, TariffRepository, TariffRow, TopUpRepository
+                RejectedEventRepository, TariffRepository, TariffRow, TopUpRepository,
+                UsageCounterRepository
   mapper/       TariffMapper, TariffApiMapper, AccountMapper
   config/       KafkaTopicConfig, DeadLetterConfig, ConsumerErrorHandlingConfig, RetryProperties,
                 ClockConfig

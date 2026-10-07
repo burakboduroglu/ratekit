@@ -1,7 +1,6 @@
 package io.github.burakboduroglu.ratekit.rating.repository;
 
 import io.github.burakboduroglu.ratekit.common.UsageEvent;
-import io.github.burakboduroglu.ratekit.common.BillingPeriod;
 import io.github.burakboduroglu.ratekit.rating.domain.Charge;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -15,15 +14,6 @@ public class ChargeRepository {
 
     ChargeRepository(JdbcClient jdbc) {
         this.jdbc = jdbc;
-    }
-
-    /** Units of {@code meter} the account was already charged for inside the period. */
-    public long unitsUsedInPeriod(String accountId, String meter, BillingPeriod period) {
-        return jdbc.sql("SELECT COALESCE(SUM(quantity), 0) FROM charges "
-                        + "WHERE account_id = ? AND meter = ? AND occurred_at >= ? AND occurred_at < ?")
-                .params(accountId, meter, utc(period.start()), utc(period.end()))
-                .query(Long.class)
-                .single();
     }
 
     public void insert(UsageEvent event, Charge charge) {

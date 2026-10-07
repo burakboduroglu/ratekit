@@ -7,6 +7,8 @@ import io.github.burakboduroglu.ratekit.common.Topics;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.junit.jupiter.api.Test;
@@ -143,6 +145,35 @@ class RatingPipelineIntegrationTest {
 
         awaitCharge(account, "nov");
         assertThat(chargeAmount(account, "nov")).isEqualByComparingTo("0"); // fresh quota in November
+    }
+
+    @Test
+    void theUsageCounterCountsOnlyChargedUnitsAndEqualsTheSumOfCharges() {
+        String account = "acc-" + UUID.randomUUID();
+        jdbc.update("INSERT INTO accounts (id, balance) VALUES (?, 1.00)", account);
+        String meter = flatTariff("0.10");
+
+        send(account, "c1", meter, 5, "2026-10-03T10:00:00Z");     // 0.50, rated
+        send(account, "c1", meter, 5, "2026-10-03T10:00:00Z");     // duplicate, skipped
+        send(account, "c2", meter, 8, "2026-10-03T11:00:00Z");     // 0.80 > 0.50 left, rejected
+        send(account, "c3", meter, 3, "2026-10-03T12:00:00Z");     // 0.30, rated
+        send(account, "c4", meter, 2, "2026-11-02T09:00:00Z");     // 0.20, rated in November
+
+        awaitCharge(account, "c4");
+        assertThat(count("rejected_events", account, "c2")).isEqualTo(1);
+        List<Map<String, Object>> fromCharges = jdbc.queryForList(
+                "SELECT meter, date_trunc('month', occurred_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS period_start, "
+                        + "SUM(quantity) AS units FROM charges WHERE account_id = ? GROUP BY 1, 2 ORDER BY 2", account);
+        List<Map<String, Object>> counters = jdbc.queryForList(
+                "SELECT meter, period_start, units FROM usage_counters WHERE account_id = ? ORDER BY period_start", account);
+        assertThat(counters).hasSize(2);
+        assertThat(counters.get(0).get("units")).isEqualTo(8L);  // 5 + 3; the rejected 8 and the duplicate are not counted
+        assertThat(counters.get(1).get("units")).isEqualTo(2L);
+        for (int i = 0; i < counters.size(); i++) {
+            assertThat(((Number) counters.get(i).get("units")).longValue())
+                    .isEqualTo(((Number) fromCharges.get(i).get("units")).longValue());
+            assertThat(counters.get(i).get("period_start")).isEqualTo(fromCharges.get(i).get("period_start"));
+        }
     }
 
     @Test

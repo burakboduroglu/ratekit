@@ -11,6 +11,7 @@ import io.github.burakboduroglu.ratekit.rating.repository.ChargeRepository;
 import io.github.burakboduroglu.ratekit.rating.repository.ProcessedEventRepository;
 import io.github.burakboduroglu.ratekit.rating.repository.RejectedEventRepository;
 import io.github.burakboduroglu.ratekit.rating.repository.TariffRepository;
+import io.github.burakboduroglu.ratekit.rating.repository.UsageCounterRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -37,14 +38,16 @@ public class RatingService {
     private final ChargeRepository charges;
     private final AccountRepository accounts;
     private final RejectedEventRepository rejected;
+    private final UsageCounterRepository usage;
 
     RatingService(ProcessedEventRepository processed, TariffRepository tariffs, ChargeRepository charges,
-                  AccountRepository accounts, RejectedEventRepository rejected) {
+                  AccountRepository accounts, RejectedEventRepository rejected, UsageCounterRepository usage) {
         this.processed = processed;
         this.tariffs = tariffs;
         this.charges = charges;
         this.accounts = accounts;
         this.rejected = rejected;
+        this.usage = usage;
     }
 
     @Transactional
@@ -57,8 +60,8 @@ public class RatingService {
             return Outcome.DUPLICATE;
         }
         TariffBook book = new TariffBook(tariffs.findByMeter(event.meter()));
-        long usedBefore = charges.unitsUsedInPeriod(
-                event.accountId(), event.meter(), BillingPeriod.containing(event.occurredAt()));
+        BillingPeriod period = BillingPeriod.containing(event.occurredAt());
+        long usedBefore = usage.unitsUsed(event.accountId(), event.meter(), period);
         Charge charge = new Rater(book).rate(event, usedBefore);
 
         if (!accounts.tryDeduct(event.accountId(), charge.amount())) {
@@ -68,6 +71,8 @@ public class RatingService {
             return Outcome.REJECTED;
         }
         charges.insert(event, charge);
+        // only a charged event counts toward quota and tiers; a rejected one used nothing
+        usage.add(event.accountId(), event.meter(), period, event.quantity());
         return Outcome.RATED;
     }
 }
