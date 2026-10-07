@@ -7,6 +7,10 @@ Stack: Java 21, Spring Boot 3, Maven multi-module, Kafka, PostgreSQL. Three serv
 
 Tasks 0 to 14 are done. What was added beyond the plan, because the work showed it was needed: ADR 0003 (package structure, after a review of the first flat layout), 0004 (retry and dead-letter policy), 0005 (invoicing) and 0006 (metrics); a REST API and an optional scheduler for invoice runs; `BillingPeriod` moved to `common` so rating and billing share one definition of a month; a benchmark of balance-deduction strategies. The CI pipeline ran green on GitHub (build and test, then three image builds). Measured results, with the machine and its limits, are in `docs/perf.md`.
 
+## Review follow-ups (2026-10-07)
+
+A review after task 14 found gaps the README did not list. Each was closed in its own commit with tests, a deliberate mutation check and, where it was a decision, an ADR: invalid tariff rows dead-lettered at once (ADR 0004 amendment); an event time window at ingest (0007); account, top-up (0008) and tariff (0009) APIs in rating; invoicing only after rating has caught up (0010); a running usage counter (0011); a tariff cache (0012); migrations in either order (0013); retention of refused events (0014); a shared API key (0015); bounded ids, actuator healthchecks, a real pre-commit hook and Dependabot. Still open: adjustment invoices for late usage, cache staleness across several rating instances, per-caller identities, separate databases, Kafka TLS and SASL.
+
 ## How we work
 
 - The owner is learning. One task at a time: explain the why first, implement, show the verify output, then wait for review before the next task.
