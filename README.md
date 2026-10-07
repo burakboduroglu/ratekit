@@ -254,6 +254,7 @@ Each service serves `/actuator/health` and Prometheus-format metrics at `/actuat
 | `ratekit_events_processed_total{outcome}` | rating | rated, rejected (no balance) or duplicate |
 | `ratekit_rating_duration_seconds` | rating | time per event including the database commit, as a histogram |
 | `ratekit_events_dead_lettered_total{cause}` | rating | records given up on, by root cause |
+| `ratekit_retention_deleted_total{table}` | rating | rows removed by the daily retention cleanup |
 | `ratekit_invoices_total{result}` | billing | invoices created or skipped as already issued |
 | `kafka_consumer_fetch_manager_records_lag_max` | rating | how far behind the consumer is |
 
@@ -454,6 +455,9 @@ Defaults suit the Compose setup. Any property can be overridden with a Spring en
 | `ratekit.ingest.event-time.max-future-skew` | `PT5M` | ingest |
 | `ratekit.ingest.event-time.late-arrival-grace` | `PT1H` (compose: `LATE_ARRIVAL_GRACE`) | ingest |
 | `ratekit.security.api-key` | unset: no key required (compose: `local-dev-key`, override with `RATEKIT_API_KEY`) | ingest, rating, billing |
+| `ratekit.rating.retention.rejected-max-age` | `P90D` (at least `P35D`) | rating |
+| `ratekit.rating.retention.batch-size` | `1000` | rating |
+| `ratekit.rating.retention.cron` | `0 30 3 * * *` (03:30 UTC daily) | rating |
 | `ratekit.rating.retry.max-retries` | `4` | rating |
 | `ratekit.rating.retry.initial-interval-ms` | `500` | rating |
 | `ratekit.rating.retry.multiplier` | `2.0` | rating |

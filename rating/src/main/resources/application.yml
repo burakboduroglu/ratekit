@@ -30,6 +30,14 @@ spring:
 
 ratekit:
   rating:
+    retention:
+      # delete rejected events (and their idempotency rows) this long after rejection; rated events
+      # are kept with their charges (ADR 0014). At least P35D, see RetentionProperties.
+      enabled: true
+      rejected-max-age: P90D
+      batch-size: 1000
+      # daily, 03:30 UTC, after billing's 02:00 run on the 1st
+      cron: "0 30 3 * * *"
     retry:
       # transient failures are retried this many times with growing pauses, then dead-lettered
       max-retries: 4
