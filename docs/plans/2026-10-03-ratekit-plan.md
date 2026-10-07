@@ -9,7 +9,7 @@ Tasks 0 to 14 are done. What was added beyond the plan, because the work showed 
 
 ## Review follow-ups (2026-10-07)
 
-A review after task 14 found gaps the README did not list. Each was closed in its own commit with tests, a deliberate mutation check and, where it was a decision, an ADR: invalid tariff rows dead-lettered at once (ADR 0004 amendment); an event time window at ingest (0007); account, top-up (0008) and tariff (0009) APIs in rating; invoicing only after rating has caught up (0010); a running usage counter (0011); a tariff cache (0012); migrations in either order (0013); retention of refused events (0014); a shared API key (0015); bounded ids, actuator healthchecks, a real pre-commit hook and Dependabot. Still open: adjustment invoices for late usage, cache staleness across several rating instances, per-caller identities, separate databases, Kafka TLS and SASL.
+A review after task 14 found gaps the README did not list. Each was closed in its own commit with tests, a deliberate mutation check and, where it was a decision, an ADR: invalid tariff rows dead-lettered at once (ADR 0004 amendment); an event time window at ingest (0007); account, top-up (0008) and tariff (0009) APIs in rating; invoicing only after rating has caught up (0010); a running usage counter (0011); a tariff cache (0012); migrations in either order (0013); retention of refused events (0014); a shared API key (0015); bounded ids, actuator healthchecks, a real pre-commit hook. Dependabot was tried and turned off: dependency upgrades are planned by hand. Still open: adjustment invoices for late usage, cache staleness across several rating instances, per-caller identities, separate databases, Kafka TLS and SASL.
 
 ## How we work
 
