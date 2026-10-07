@@ -1,12 +1,14 @@
 package io.github.burakboduroglu.ratekit.rating.service;
 
+import io.github.burakboduroglu.ratekit.rating.config.TariffCacheProperties;
 import io.github.burakboduroglu.ratekit.rating.exception.InvalidTariffException;
-import io.github.burakboduroglu.ratekit.rating.exception.TariffInThePastException;
+import io.github.burakboduroglu.ratekit.rating.exception.TariffStartsTooSoonException;
 import io.github.burakboduroglu.ratekit.rating.exception.TariffVersionExistsException;
 import io.github.burakboduroglu.ratekit.rating.mapper.TariffMapper;
 import io.github.burakboduroglu.ratekit.rating.repository.TariffRepository;
 import io.github.burakboduroglu.ratekit.rating.repository.TariffRow;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import org.springframework.stereotype.Service;
@@ -20,7 +22,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * <p>A new version is checked by building its price model with the same {@link TariffMapper} that
  * rating uses when it prices an event, so a tariff that rating could not read is refused at the door
  * instead of dead-lettering every event of its meter later. Versions are never edited: a price change
- * is a new version, and it may not start in the past.
+ * is a new version, and it may not start before every rating instance's cache has expired (one
+ * cache TTL after now, ADR 0012), which also rules out the past.
  */
 @Service
 public class TariffService {
@@ -29,15 +32,18 @@ public class TariffService {
     private final TariffMapper mapper;
     private final Clock clock;
     private final TariffBookCache cache;
+    private final Duration cacheTtl;
 
-    public TariffService(TariffRepository tariffs, TariffMapper mapper, Clock clock, TariffBookCache cache) {
+    public TariffService(TariffRepository tariffs, TariffMapper mapper, Clock clock, TariffBookCache cache,
+            TariffCacheProperties cacheProperties) {
         this.tariffs = tariffs;
         this.mapper = mapper;
         this.clock = clock;
         this.cache = cache;
+        this.cacheTtl = cacheProperties.ttl();
     }
 
-    /** @param effectiveFrom when the version starts; {@code null} means now */
+    /** @param effectiveFrom when the version starts; {@code null} means the earliest allowed, now plus the cache TTL */
     @Transactional
     public TariffRow add(String meter, String model, Instant effectiveFrom, String paramsJson) {
         try {
@@ -46,9 +52,10 @@ public class TariffService {
             throw new InvalidTariffException(meter, e);
         }
         Instant now = clock.instant();
-        Instant from = effectiveFrom == null ? now : effectiveFrom;
-        if (from.isBefore(now)) {
-            throw new TariffInThePastException(from, now);
+        Instant earliest = now.plus(cacheTtl);
+        Instant from = effectiveFrom == null ? earliest : effectiveFrom;
+        if (from.isBefore(earliest)) {
+            throw new TariffStartsTooSoonException(from, earliest, cacheTtl);
         }
         long id = tariffs.insertIfAbsent(meter, model, from, paramsJson)
                 .orElseThrow(() -> new TariffVersionExistsException(meter, from));

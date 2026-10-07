@@ -12,7 +12,7 @@ An ADR records one decision: the context, what was decided, the alternatives and
 | [0006](0006-metrics.md) | Metrics through Micrometer in Prometheus format; no collector in the repository | accepted |
 | [0007](0007-event-time-window.md) | ingest accepts `occurredAt` from the start of the open month (plus a one-hour grace after a month ends) to five minutes ahead; anything else gets `422` | accepted |
 | [0008](0008-accounts-and-top-ups.md) | rating opens accounts and takes top-ups over HTTP; money enters only through an idempotent top-up recorded in a ledger table | accepted |
-| [0009](0009-tariff-versions-api.md) | Tariff versions are added over HTTP, checked with rating's own parser, and may not start in the past | accepted |
+| [0009](0009-tariff-versions-api.md) | Tariff versions are added over HTTP, checked with rating's own parser, and may not start before now plus the tariff-cache TTL | accepted |
 | [0010](0010-invoice-after-rating-caught-up.md) | billing invoices a month only after rating has committed every usage event written before the late-arrival grace ended | accepted |
 | [0011](0011-usage-counter.md) | Units used per account, meter and month are kept in a running counter updated with each charge, instead of summed from charges on every event | accepted |
 | [0012](0012-tariff-cache.md) | Rating keeps each meter's tariff versions in memory for 30 s, evicts a meter when its own API adds a version, and rereads when no cached version applies | accepted |

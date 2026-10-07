@@ -120,10 +120,10 @@ Tariffs are managed on the same port:
 
 | Method | Path | Success | Errors |
 | --- | --- | --- | --- |
-| `POST` | `/v1/tariffs` with `{"meter": "sms", "model": "FREE_QUOTA_THEN_FLAT", "effectiveFrom": "2026-11-01T00:00:00Z", "params": {"freeUnits": 100, "rate": "0.05"}}` | `201` with the stored version; `effectiveFrom` may be omitted for "now" | `400` unknown model or parameters rating could not price with, `409` the meter already has a version starting at that instant, `422` `effectiveFrom` is in the past |
+| `POST` | `/v1/tariffs` with `{"meter": "sms", "model": "FREE_QUOTA_THEN_FLAT", "effectiveFrom": "2026-11-01T00:00:00Z", "params": {"freeUnits": 100, "rate": "0.05"}}` | `201` with the stored version; `effectiveFrom` may be omitted for "now plus the cache TTL" (30 s) | `400` unknown model or parameters rating could not price with, `409` the meter already has a version starting at that instant, `422` `effectiveFrom` is earlier than now plus the cache TTL |
 | `GET` | `/v1/tariffs?meter=sms` | `200` with the meter's versions, oldest first | |
 
-A version is never edited: a price change is a new version, starting now or later. New parameters are checked with the same code rating prices with, so a tariff rating could not read never gets in ([ADR 0009](docs/adr/0009-tariff-versions-api.md)). Every `/v1` call on the three services needs the shared key in an `X-Api-Key` header once `ratekit.security.api-key` is set, which compose does (`local-dev-key` unless `RATEKIT_API_KEY` says otherwise); a missing or wrong key gets `401`. Actuator and Swagger stay open ([ADR 0015](docs/adr/0015-shared-api-key.md)).
+A version is never edited: a price change is a new version, starting at least one tariff-cache TTL (30 s by default) from now, so every rating instance has dropped the old versions before the new one applies ([ADR 0012](docs/adr/0012-tariff-cache.md)). New parameters are checked with the same code rating prices with, so a tariff rating could not read never gets in ([ADR 0009](docs/adr/0009-tariff-versions-api.md)). Every `/v1` call on the three services needs the shared key in an `X-Api-Key` header once `ratekit.security.api-key` is set, which compose does (`local-dev-key` unless `RATEKIT_API_KEY` says otherwise); a missing or wrong key gets `401`. Actuator and Swagger stay open ([ADR 0015](docs/adr/0015-shared-api-key.md)).
 
 `billing` (port 8083) has its own API, also documented at `http://localhost:8083/swagger-ui.html`:
 
@@ -147,7 +147,7 @@ KEY=local-dev-key                     # the API key compose sets by default (RAT
 
 # 2. Create a demo tariff (100 free SMS a month, then 0.05 each), then open an account and top it up.
 #    The tariff comes from SQL because it starts on 1 January, so it also prices last month's usage in
-#    the invoicing demo below; the API only adds versions that start now or later (POST /v1/tariffs).
+#    the invoicing demo below; the API only adds versions that start one cache TTL from now or later (POST /v1/tariffs).
 docker compose exec -T postgres psql -U ratekit -d ratekit < scripts/seed-demo.sql
 curl -H "X-Api-Key: $KEY" -X POST localhost:8082/v1/accounts -H 'Content-Type: application/json' -d '{"accountId":"acc-demo"}'
 curl -H "X-Api-Key: $KEY" -X POST localhost:8082/v1/accounts/acc-demo/top-ups -H 'Content-Type: application/json' \
@@ -316,7 +316,7 @@ rating/  io.github.burakboduroglu.ratekit.rating
   config/       KafkaTopicConfig, DeadLetterConfig, ConsumerErrorHandlingConfig, RetryProperties,
                 ClockConfig, TariffCacheConfig, TariffCacheProperties
   exception/    UnknownAccountException, InvalidTariffException, AccountNotFoundException,
-                AccountAlreadyExistsException, TopUpConflictException, TariffInThePastException,
+                AccountAlreadyExistsException, TopUpConflictException, TariffStartsTooSoonException,
                 TariffVersionExistsException, ApiExceptionHandler
   domain/       PriceModel, FlatPrice, TieredPrice, FreeQuotaThenFlat,
                 Tariff, TariffBook, Rater, Charge, Account, NoTariffException

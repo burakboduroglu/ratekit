@@ -24,9 +24,9 @@ public class ApiExceptionHandler {
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
     }
 
-    /** 422: the tariff itself is valid, but it cannot start at that time. */
-    @ExceptionHandler(TariffInThePastException.class)
-    public ProblemDetail tariffInThePast(TariffInThePastException e) {
+    /** 422: the tariff itself is valid, but it cannot start that early. */
+    @ExceptionHandler(TariffStartsTooSoonException.class)
+    public ProblemDetail tariffStartsTooSoon(TariffStartsTooSoonException e) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, e.getMessage());
     }
 }

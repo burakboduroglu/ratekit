@@ -30,11 +30,11 @@ public class TariffController {
     }
 
     @Operation(summary = "Add a tariff version for a meter",
-            description = "Versions are never edited: a price change is a new version starting now or later.")
+            description = "Versions are never edited: a price change is a new version starting at least one cache TTL (30 s by default) from now.")
     @ApiResponse(responseCode = "201", description = "Version stored")
     @ApiResponse(responseCode = "400", description = "Unknown model or parameters rating could not price with")
     @ApiResponse(responseCode = "409", description = "The meter already has a version starting at that instant")
-    @ApiResponse(responseCode = "422", description = "effectiveFrom is in the past")
+    @ApiResponse(responseCode = "422", description = "effectiveFrom is earlier than now plus the cache TTL")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public TariffResponse add(@Valid @RequestBody TariffRequest request) {

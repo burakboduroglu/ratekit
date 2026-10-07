@@ -3,6 +3,7 @@ package io.github.burakboduroglu.ratekit.rating;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+import com.jayway.jsonpath.JsonPath;
 import io.github.burakboduroglu.ratekit.common.Topics;
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -31,7 +32,7 @@ import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /** The tariff API over HTTP, and proof that a tariff added through it prices real events. */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = "ratekit.rating.tariff-cache.ttl=PT2S")
 @Testcontainers
 class TariffApiIntegrationTest {
 
@@ -68,7 +69,7 @@ class TariffApiIntegrationTest {
         post("/v1/accounts/" + account + "/top-ups", "{\"topUpId\":\"t1\",\"amount\":\"10\"}");
 
         ResponseEntity<String> created = addTariff(meter, "FREE_QUOTA_THEN_FLAT", null, "{\"freeUnits\":2,\"rate\":\"0.05\"}");
-        Instant after = Instant.now().plusSeconds(1);
+        Instant after = Instant.now().plusSeconds(3);   // after the version starts (now plus the 2 s TTL)
         kafka.send(Topics.USAGE_EVENTS, account, """
                 {"eventId":"e1","accountId":"%s","meter":"%s","quantity":5,"occurredAt":"%s"}"""
                 .formatted(account, meter, after));
@@ -104,6 +105,28 @@ class TariffApiIntegrationTest {
     }
 
     @Test
+    void aVersionStartingBeforeEveryCacheHasExpiredIsRefusedAndNothingIsStored() {
+        String meter = meter();
+
+        ResponseEntity<String> response = addTariff(meter, "FLAT", "\"" + Instant.now().plusSeconds(1) + "\"", "{\"rate\":\"1\"}");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        assertThat(response.getBody()).contains("PT2S").contains("cache has expired");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM tariffs WHERE meter = ?", Integer.class, meter)).isZero();
+    }
+
+    @Test
+    void anOmittedStartIsOneTtlFromNow() {
+        Instant before = Instant.now();
+
+        ResponseEntity<String> response = addTariff(meter(), "FLAT", null, "{\"rate\":\"1\"}");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        Instant from = Instant.parse(JsonPath.read(response.getBody(), "$.effectiveFrom"));
+        assertThat(from).isBetween(before.plusSeconds(2), Instant.now().plusSeconds(2));
+    }
+
+    @Test
     void twoVersionsCannotStartAtTheSameInstant() {
         String meter = meter();
         String from = "\"" + Instant.now().plusSeconds(3600) + "\"";
@@ -127,7 +150,7 @@ class TariffApiIntegrationTest {
     }
 
     @Test
-    void aNewVersionIsUsedAtOnceEvenWhileTheOldOneIsCached() {
+    void aNewVersionIsUsedFromItsStartEvenWhileTheOldOneWasCached() {
         String meter = meter();
         jdbc.update("INSERT INTO tariffs (meter, model, effective_from, params) "
                 + "VALUES (?, 'FLAT', '2026-01-01T00:00:00Z'::timestamptz, '{\"rate\":\"0.05\"}'::jsonb)", meter);
@@ -137,10 +160,13 @@ class TariffApiIntegrationTest {
 
         sendEvent(account, "before", meter, Instant.now());
         awaitChargeOf(account, "before", "0.05");           // rating has now cached the 0.05 version
-        assertThat(addTariff(meter, "FLAT", null, "{\"rate\":\"0.08\"}").getStatusCode()).isEqualTo(HttpStatus.CREATED);
-        sendEvent(account, "after", meter, Instant.now().plusSeconds(1));
+        ResponseEntity<String> added = addTariff(meter, "FLAT", null, "{\"rate\":\"0.08\"}");
+        assertThat(added.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        Instant from = Instant.parse(JsonPath.read(added.getBody(), "$.effectiveFrom"));
+        await().atMost(Duration.ofSeconds(10)).until(() -> Instant.now().isAfter(from));
+        sendEvent(account, "after", meter, Instant.now());
 
-        awaitChargeOf(account, "after", "0.08");            // well inside the 30 s TTL
+        awaitChargeOf(account, "after", "0.08");            // the cached 0.05 version expired before the start
     }
 
     // ---- helpers ----
