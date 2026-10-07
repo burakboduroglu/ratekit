@@ -5,11 +5,13 @@ import io.github.burakboduroglu.ratekit.billing.config.BillingProperties;
 import io.github.burakboduroglu.ratekit.billing.domain.Invoice;
 import io.github.burakboduroglu.ratekit.billing.domain.InvoiceLine;
 import io.github.burakboduroglu.ratekit.billing.exception.PeriodNotClosedException;
+import io.github.burakboduroglu.ratekit.billing.exception.RatingNotCaughtUpException;
 import io.github.burakboduroglu.ratekit.billing.repository.ChargeUsageRepository;
 import io.github.burakboduroglu.ratekit.billing.repository.UsageRow;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -20,6 +22,10 @@ import org.springframework.stereotype.Service;
 
 /**
  * Invoices every account that used something in a finished period.
+ *
+ * <p>A period is invoiced only after it has ended, after ingest has stopped accepting usage for it
+ * (the late-arrival grace) and after rating has rated everything accepted until then (ADR 0010).
+ * Otherwise the run is refused and changes nothing; the scheduler simply tries again an hour later.
  *
  * <p>Safe to run again for the same period: the unique (account, period) key makes a second
  * attempt skip accounts that already have an invoice, and each invoice is its own transaction, so a
@@ -36,15 +42,17 @@ public class InvoiceRunService {
     private static final Logger log = LoggerFactory.getLogger(InvoiceRunService.class);
 
     private final ChargeUsageRepository usage;
+    private final RatingProgress ratingProgress;
     private final InvoiceService invoices;
     private final BillingProperties properties;
     private final Clock clock;
     private final Counter created;
     private final Counter skipped;
 
-    public InvoiceRunService(ChargeUsageRepository usage, InvoiceService invoices, BillingProperties properties,
-                             Clock clock, MeterRegistry meters) {
+    public InvoiceRunService(ChargeUsageRepository usage, RatingProgress ratingProgress, InvoiceService invoices,
+                             BillingProperties properties, Clock clock, MeterRegistry meters) {
         this.usage = usage;
+        this.ratingProgress = ratingProgress;
         this.invoices = invoices;
         this.properties = properties;
         this.clock = clock;
@@ -55,6 +63,10 @@ public class InvoiceRunService {
     public RunSummary run(BillingPeriod period) {
         if (period.end().isAfter(clock.instant())) {
             throw new PeriodNotClosedException(period);
+        }
+        Instant cutoff = period.end().plus(properties.ratingProgress().lateArrivalGrace());
+        if (cutoff.isAfter(clock.instant()) || !ratingProgress.caughtUpTo(cutoff)) {
+            throw new RatingNotCaughtUpException(period, cutoff);
         }
         int createdNow = 0;
         int alreadyInvoiced = 0;

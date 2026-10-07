@@ -103,8 +103,12 @@ services:
       # billing reads rating's charges table, which rating's migration creates
       rating:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ratekit
+      # billing asks Kafka how far rating has got before it invoices a month (ADR 0010)
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:19092
       JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=50
     mem_limit: 512m
     ports:

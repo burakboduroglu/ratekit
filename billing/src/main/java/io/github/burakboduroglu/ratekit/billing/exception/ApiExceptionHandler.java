@@ -19,6 +19,16 @@ public class ApiExceptionHandler {
         return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
     }
 
+    @ExceptionHandler(RatingNotCaughtUpException.class)
+    public ProblemDetail ratingNotCaughtUp(RatingNotCaughtUpException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
+    }
+
+    @ExceptionHandler(RatingProgressUnknownException.class)
+    public ProblemDetail ratingProgressUnknown(RatingProgressUnknownException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
+    }
+
     @ExceptionHandler(InvoiceNotFoundException.class)
     public ProblemDetail notFound(InvoiceNotFoundException e) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());

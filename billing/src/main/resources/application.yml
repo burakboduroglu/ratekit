@@ -8,6 +8,8 @@ spring:
     url: jdbc:postgresql://localhost:5432/ratekit
     username: ratekit
     password: ratekit
+  kafka:
+    bootstrap-servers: localhost:9092
   flyway:
     # billing shares the database with rating but owns only its own tables and its own history
     locations: classpath:db/billing
@@ -23,8 +25,16 @@ ratekit:
     scheduler:
       # off by default: an invoice run is triggered by POST /v1/invoice-runs
       enabled: false
-      # 02:00 UTC on the first day of the month, invoicing the month that just ended
-      cron: "0 0 2 1 * *"
+      # hourly from 02:00 UTC on the first day of the month, invoicing the month that just ended;
+      # a run that finds rating behind is skipped, a run after the month is invoiced creates nothing
+      cron: "0 0 2-23 1 * *"
+    rating-progress:
+      # refuse a run until rating has rated all usage accepted for the month (ADR 0010)
+      enabled: true
+      consumer-group: ratekit-rating
+      # must equal ingest's ratekit.ingest.event-time.late-arrival-grace
+      late-arrival-grace: PT1H
+      timeout: PT10S
 
 management:
   endpoints:

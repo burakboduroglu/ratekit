@@ -10,7 +10,9 @@ import io.github.burakboduroglu.ratekit.billing.domain.InvoiceLine;
 import io.github.burakboduroglu.ratekit.billing.exception.PeriodNotClosedException;
 import io.github.burakboduroglu.ratekit.billing.service.InvoiceRunService;
 import io.github.burakboduroglu.ratekit.billing.service.InvoiceRunService.RunSummary;
+import io.github.burakboduroglu.ratekit.billing.exception.RatingNotCaughtUpException;
 import io.github.burakboduroglu.ratekit.billing.service.InvoiceService;
+import io.github.burakboduroglu.ratekit.billing.service.RatingProgress;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
 import java.time.Instant;
@@ -24,6 +26,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.actuate.observability.AutoConfigureObservability;
@@ -53,7 +56,9 @@ import org.testcontainers.utility.DockerImageName;
 @AutoConfigureObservability
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "spring.flyway.locations=classpath:db/billing,classpath:db/billing-test",
-        "ratekit.billing.batch-size=2"})
+        "ratekit.billing.batch-size=2",
+        // the Kafka check has its own test; here a switch stands in for it
+        "ratekit.billing.rating-progress.enabled=false"})
 @Testcontainers
 class InvoiceRunIntegrationTest {
 
@@ -61,8 +66,17 @@ class InvoiceRunIntegrationTest {
     @ServiceConnection
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>(DockerImageName.parse("postgres:17.11-alpine"));
 
+    /** Whether the stand-in reports rating as caught up; tests that change it set it back. */
+    static final AtomicBoolean RATING_CAUGHT_UP = new AtomicBoolean(true);
+
     @TestConfiguration
     static class FixedClock {
+        @Bean
+        @Primary
+        RatingProgress switchableRatingProgress() {
+            return cutoff -> RATING_CAUGHT_UP.get();
+        }
+
         @Bean
         @Primary
         Clock fixedClock() {
@@ -230,6 +244,23 @@ class InvoiceRunIntegrationTest {
     void aPeriodThatHasNotEndedCannotBeInvoiced() {
         assertThatThrownBy(() -> runs.run(month(2027, 6))).isInstanceOf(PeriodNotClosedException.class);
         assertThatThrownBy(() -> runs.run(month(2027, 7))).isInstanceOf(PeriodNotClosedException.class);
+    }
+
+    @Test
+    void aMonthIsNotInvoicedWhileRatingIsBehindAndIsOnceItCatchesUp() {
+        String account = "behind-" + UUID.randomUUID();
+        charge(account, "sms", 1, "0.0500", "2026-08-10T10:00:00Z");
+        RATING_CAUGHT_UP.set(false);
+        try {
+            assertThatThrownBy(() -> runs.run(month(2026, 8))).isInstanceOf(RatingNotCaughtUpException.class);
+            assertThat(post("/v1/invoice-runs", "{\"period\":\"2026-08\"}").getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+            assertThat(invoices.find(account, month(2026, 8))).isEmpty();
+        } finally {
+            RATING_CAUGHT_UP.set(true);
+        }
+
+        assertThat(runs.run(month(2026, 8)).created()).isGreaterThanOrEqualTo(1);
+        assertThat(invoices.find(account, month(2026, 8))).isPresent();
     }
 
     @Test

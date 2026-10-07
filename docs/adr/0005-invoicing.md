@@ -14,7 +14,7 @@ Status: accepted (2026-10-03)
 - **Batches by account id:** accounts are read in keyset-paged batches (`account_id > last ORDER BY account_id LIMIT n`, default 500), and usage is summed per meter in the database. Memory does not grow with the number of accounts.
 - **Only finished months:** a run for a month that has not ended is refused with `409`, because an invoice written early would miss usage still to come.
 - **The month is a shared definition:** `BillingPeriod` (calendar month in UTC, start inclusive, end exclusive) lives in `common`, so rating's quota accumulation and billing's invoices cannot drift apart. A usage at 01:00 on 1 October in Turkey is 22:00 on 30 September in UTC and belongs to September.
-- **Triggering:** `POST /v1/invoice-runs` runs a month on demand. An optional scheduler (`ratekit.billing.scheduler.enabled`, cron default 02:00 UTC on the 1st) invoices the month that just ended. It is off by default so nothing runs by surprise.
+- **Triggering** (the schedule and the readiness check were changed by ADR 0010): `POST /v1/invoice-runs` runs a month on demand. An optional scheduler (`ratekit.billing.scheduler.enabled`, cron default 02:00 UTC on the 1st) invoices the month that just ended. It is off by default so nothing runs by surprise.
 
 ## Alternatives considered
 

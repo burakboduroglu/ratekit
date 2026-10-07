@@ -13,3 +13,4 @@ An ADR records one decision: the context, what was decided, the alternatives and
 | [0007](0007-event-time-window.md) | ingest accepts `occurredAt` from the start of the open month (plus a one-hour grace after a month ends) to five minutes ahead; anything else gets `422` | accepted |
 | [0008](0008-accounts-and-top-ups.md) | rating opens accounts and takes top-ups over HTTP; money enters only through an idempotent top-up recorded in a ledger table | accepted |
 | [0009](0009-tariff-versions-api.md) | Tariff versions are added over HTTP, checked with rating's own parser, and may not start in the past | accepted |
+| [0010](0010-invoice-after-rating-caught-up.md) | billing invoices a month only after rating has committed every usage event written before the late-arrival grace ended | accepted |

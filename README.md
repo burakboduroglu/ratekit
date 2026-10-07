@@ -129,7 +129,7 @@ A version is never edited: a price change is a new version, starting now or late
 
 | Method | Path | Success | Errors |
 | --- | --- | --- | --- |
-| `POST` | `/v1/invoice-runs` with `{"period": "2026-09"}` | `200` with `{period, invoicesCreated, alreadyInvoiced}` | `400` invalid period, `409` the month has not ended |
+| `POST` | `/v1/invoice-runs` with `{"period": "2026-09"}` | `200` with `{period, invoicesCreated, alreadyInvoiced}` | `400` invalid period, `409` the month has not ended or rating has not yet rated everything accepted for it, `503` Kafka could not be asked |
 | `GET` | `/v1/invoices/{accountId}?period=2026-09` | `200` with the invoice: lines per meter and the total | `400` invalid period, `404` no such invoice |
 
 Amounts are decimal strings with four digits (`"0.2500"`) so no client rounds them as floating point.
@@ -174,6 +174,7 @@ LATE_ARRIVAL_GRACE=P62D docker compose up -d ingest       # demo only; the defau
 LAST=$(date -u -v1d -v-1m +%Y-%m)                         # GNU date: date -u -d "$(date -u +%Y-%m-01) -1 month" +%Y-%m
 curl -X POST localhost:8081/v1/events -H 'Content-Type: application/json' \
   -d '{"eventId":"e-3","accountId":"acc-demo","meter":"sms","quantity":105,"occurredAt":"'$LAST'-15T10:00:00Z"}'
+sleep 2                                                   # billing only waits for usage written before 01:00 on the 1st
 curl -X POST localhost:8083/v1/invoice-runs -H 'Content-Type: application/json' -d '{"period":"'$LAST'"}'
 curl "localhost:8083/v1/invoices/acc-demo?period=$LAST"
 docker compose up -d ingest                               # back to the one-hour window
@@ -282,7 +283,7 @@ One rating thread handles about 1,400 events per second; three together drained 
 | GitHub Actions CI: build, test (Testcontainers), build the three images | |
 | Metrics, a k6 load test and measured results | |
 
-Known limits today: a transient failure can hold up its partition for up to 7.5 seconds (configurable). Dead letters are inspected and replayed by hand. Events that arrive out of order are rated in arrival order. Rejections for insufficient balance are not reported back to the sender, who already received `202`. ingest refuses usage for a month once its one-hour grace has passed, but an event already accepted and still waiting in Kafka when billing runs is rated after its month was invoiced and is not added to that invoice (an issued invoice is never rewritten). `billing` reads `rating`'s `charges` table directly, so the two services share a database. An invoice run is synchronous. The full stack needs about 1.7 GB, which is nearly all of a default 2 GB Podman VM (4 GB is recommended).
+Known limits today: a transient failure can hold up its partition for up to 7.5 seconds (configurable). Dead letters are inspected and replayed by hand. Events that arrive out of order are rated in arrival order. Rejections for insufficient balance are not reported back to the sender, who already received `202`. ingest refuses usage for a month once its one-hour grace has passed, and billing does not invoice a month until rating has committed every usage event written to Kafka before that grace ended (ADR 0010). An issued invoice is never rewritten, so usage that reaches rating later by other routes (a replayed dead letter) is not added to it. `billing` reads `rating`'s `charges` table directly, so the two services share a database. An invoice run is synchronous. The full stack needs about 1.7 GB, which is nearly all of a default 2 GB Podman VM (4 GB is recommended).
 
 ## Code structure
 
@@ -319,11 +320,13 @@ billing/  io.github.burakboduroglu.ratekit.billing
   controller/   InvoiceRunController, InvoiceController
   dto/          InvoiceRunRequest, InvoiceRunResponse, InvoiceResponse, InvoiceLineResponse
   mapper/       InvoiceMapper, BillingPeriodMapper
-  service/      InvoiceRunService, InvoiceService
+  service/      InvoiceRunService, InvoiceService, RatingProgress
   repository/   ChargeUsageRepository, InvoiceRepository, UsageRow
   scheduler/    InvoiceScheduler
   config/       BillingConfig, BillingProperties
-  exception/    InvalidPeriodException, PeriodNotClosedException, InvoiceNotFoundException, ApiExceptionHandler
+  messaging/    KafkaRatingProgress
+  exception/    InvalidPeriodException, PeriodNotClosedException, InvoiceNotFoundException,
+                RatingNotCaughtUpException, RatingProgressUnknownException, ApiExceptionHandler
   domain/       Invoice, InvoiceLine
 
 common/  io.github.burakboduroglu.ratekit.common
@@ -453,7 +456,11 @@ Defaults suit the Compose setup. Any property can be overridden with a Spring en
 | `ratekit.rating.retry.max-interval-ms` | `5000` | rating |
 | `ratekit.billing.batch-size` | `500` | billing |
 | `ratekit.billing.scheduler.enabled` | `false` | billing |
-| `ratekit.billing.scheduler.cron` | `0 0 2 1 * *` (02:00 UTC on the 1st) | billing |
+| `ratekit.billing.scheduler.cron` | `0 0 2-23 1 * *` (hourly from 02:00 UTC on the 1st; a run that finds rating behind is skipped) | billing |
+| `ratekit.billing.rating-progress.enabled` | `true` (`false` runs billing without Kafka and without the check) | billing |
+| `ratekit.billing.rating-progress.consumer-group` | `ratekit-rating` | billing |
+| `ratekit.billing.rating-progress.late-arrival-grace` | `PT1H`, must equal ingest's `late-arrival-grace` | billing |
+| `ratekit.billing.rating-progress.timeout` | `PT10S` | billing |
 | `spring.kafka.producer.acks` | `all`, with idempotent producer | ingest |
 
 ## Project layout
