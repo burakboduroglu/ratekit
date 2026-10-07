@@ -1,6 +1,7 @@
 package io.github.burakboduroglu.ratekit.rating.config;
 
 import io.github.burakboduroglu.ratekit.rating.domain.NoTariffException;
+import io.github.burakboduroglu.ratekit.rating.exception.InvalidTariffException;
 import io.github.burakboduroglu.ratekit.rating.exception.UnknownAccountException;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -20,7 +21,8 @@ import org.springframework.kafka.support.ExponentialBackOffWithMaxRetries;
  *   <li>Transient failures (for example a database blip) are retried a bounded number of times
  *       with growing pauses.
  *   <li>Permanent failures never improve by waiting, so they go to the dead-letter topic at once:
- *       an unknown account, a meter with no tariff, and a message that cannot be deserialized
+ *       an unknown account, a meter with no tariff, a tariff row that is invalid, usage that
+ *       overflows its counter, and a message that cannot be deserialized
  *       (Spring Kafka treats that one as permanent by default).
  *   <li>After the last retry the record is dead-lettered and the partition moves on.
  * </ul>
@@ -46,7 +48,9 @@ public class ConsumerErrorHandlingConfig {
                     .increment();
             recoverer.accept(record, exception);
         }, backOff);
-        handler.addNotRetryableExceptions(NoTariffException.class, UnknownAccountException.class);
+        // ArithmeticException: usage in the period overflowed a long, which no retry will undo
+        handler.addNotRetryableExceptions(NoTariffException.class, UnknownAccountException.class,
+                InvalidTariffException.class, ArithmeticException.class);
         return handler;
     }
 }

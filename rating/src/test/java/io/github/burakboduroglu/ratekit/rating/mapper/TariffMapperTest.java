@@ -9,9 +9,12 @@ import io.github.burakboduroglu.ratekit.rating.domain.FreeQuotaThenFlat;
 import io.github.burakboduroglu.ratekit.rating.domain.PriceModel;
 import io.github.burakboduroglu.ratekit.rating.domain.Tariff;
 import io.github.burakboduroglu.ratekit.rating.domain.TieredPrice;
+import io.github.burakboduroglu.ratekit.rating.exception.InvalidTariffException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class TariffMapperTest {
 
@@ -55,6 +58,30 @@ class TariffMapperTest {
         assertThatThrownBy(() -> mapper.toModel("MAGIC", "{}"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("MAGIC");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "{}",                                                  // rate missing
+            "{\"rate\":\"-1\"}",                                   // negative rate
+            "{\"rate\":\"abc\"}",                                  // not a number
+            "not json"})
+    void reportsAnInvalidRowAsOneExceptionTypeNamingTheTariff(String params) {
+        assertThatThrownBy(() -> mapper.toTariff(7, "sms", "FLAT", Instant.EPOCH, params))
+                .isInstanceOf(InvalidTariffException.class)
+                .hasMessageContaining("tariff 7")
+                .hasMessageContaining("sms")
+                .hasCauseInstanceOf(RuntimeException.class);
+    }
+
+    @Test
+    void reportsInvalidTiersAsAnInvalidTariff() {
+        String descending = "{\"tiers\":[{\"upTo\":100,\"rate\":\"0.10\"},{\"upTo\":50,\"rate\":\"0.05\"},"
+                + "{\"upTo\":null,\"rate\":\"0.01\"}]}";
+
+        assertThatThrownBy(() -> mapper.toTariff(8, "data-mb", "TIERED", Instant.EPOCH, descending))
+                .isInstanceOf(InvalidTariffException.class)
+                .hasRootCauseInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

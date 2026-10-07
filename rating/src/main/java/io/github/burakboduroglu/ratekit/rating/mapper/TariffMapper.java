@@ -7,6 +7,7 @@ import io.github.burakboduroglu.ratekit.rating.domain.FreeQuotaThenFlat;
 import io.github.burakboduroglu.ratekit.rating.domain.PriceModel;
 import io.github.burakboduroglu.ratekit.rating.domain.Tariff;
 import io.github.burakboduroglu.ratekit.rating.domain.TieredPrice;
+import io.github.burakboduroglu.ratekit.rating.exception.InvalidTariffException;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.math.BigDecimal;
@@ -32,8 +33,15 @@ public class TariffMapper {
         this.json = json;
     }
 
+    /** @throws InvalidTariffException if the stored row does not describe a valid price model */
     public Tariff toTariff(long id, String meter, String model, Instant effectiveFrom, String paramsJson) {
-        return new Tariff(id, meter, effectiveFrom, toModel(model, paramsJson));
+        try {
+            return new Tariff(id, meter, effectiveFrom, toModel(model, paramsJson));
+        } catch (RuntimeException e) {
+            // a missing field surfaces as a NullPointerException, a bad value as IllegalArgumentException,
+            // and so on; one type lets the error handler treat all of them as permanent
+            throw new InvalidTariffException(id, meter, e);
+        }
     }
 
     public PriceModel toModel(String name, String paramsJson) {

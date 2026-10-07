@@ -117,6 +117,23 @@ class DeadLetterIntegrationTest {
     }
 
     @Test
+    void aMeterWithAnInvalidTariffRowIsDeadLetteredAtOnce() {
+        String account = account();
+        String meter = flatTariff();
+        String broken = "broken-" + UUID.randomUUID();
+        jdbc.update("INSERT INTO tariffs (meter, model, effective_from, params) "
+                + "VALUES (?, 'FLAT', '2026-01-01T00:00:00Z'::timestamptz, '{}'::jsonb)", broken); // rate missing
+
+        send(account, "bad-tariff", broken);
+        send(account, "good", meter);
+
+        awaitCharge(account, "good");
+        assertThat(causeOf(awaitDeadLetter("bad-tariff"))).endsWith("InvalidTariffException");
+        verify(rating, times(1)).handle(argThat(e -> e != null && e.eventId().equals("bad-tariff")));
+        assertThat(count("processed_events", account, "bad-tariff")).isZero(); // rolled back
+    }
+
+    @Test
     void anUnreadableMessageIsDeadLetteredWithItsOriginalBytes() {
         String account = account();
         String meter = flatTariff();
