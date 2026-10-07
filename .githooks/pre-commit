@@ -1,5 +1,42 @@
 #!/usr/bin/env bash
+# Fast, dependency-free checks on what is about to be committed. Enable once per clone with:
+#   git config core.hooksPath .githooks
+# It looks only at staged changes and never builds or tests (CI does that). Bypass a false alarm
+# with `git commit --no-verify`, after checking it really is one.
 set -euo pipefail
 
-# Add project-specific checks here. Keep this hook generic and dependency-free.
+fail=0
+report() {
+  echo "pre-commit: $1" >&2
+  fail=1
+}
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -z "$staged" ] && exit 0
+
+# Personal learning notes stay out of the public history (they were removed from it once already).
+if echo "$staged" | grep -q '^docs/learning/'; then
+  report "docs/learning/ is personal and must not be committed"
+fi
+
+# Only the lines this commit adds, so old content never blocks a commit. The hook itself holds the
+# patterns, so it is not scanned.
+added=$(git diff --cached -U0 --diff-filter=ACMR -- . ':(exclude).githooks/pre-commit' | grep -E '^\+' | grep -vE '^\+\+\+ ' || true)
+
+if echo "$added" | grep -qE '^\+(<<<<<<<|>>>>>>>)( |$)|^\+=======$'; then
+  report "merge conflict markers in staged changes"
+fi
+
+if echo "$added" | grep -qE -- '-----BEGIN ([A-Z]+ )?PRIVATE KEY-----'; then
+  report "a private key is staged"
+fi
+
+if echo "$added" | grep -qE 'AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{40,}|xox[baprs]-[A-Za-z0-9-]{10,}'; then
+  report "something that looks like a cloud or GitHub/Slack token is staged"
+fi
+
+if [ "$fail" -ne 0 ]; then
+  echo "pre-commit: commit refused; fix the above or use --no-verify if it is a false alarm" >&2
+  exit 1
+fi
 exit 0

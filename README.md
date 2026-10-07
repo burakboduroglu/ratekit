@@ -232,6 +232,8 @@ Compose services and their pinned images are described in [`docs/specs/local-dev
 
 Every push to `main` and every pull request runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml): first the **build and test** job (`mvn verify`, with the integration tests running against real Kafka and PostgreSQL through Testcontainers), then, once it passes, the three service images are built in parallel. The images are built to prove they build, not published.
 
+Locally, `git config core.hooksPath .githooks` turns on a fast pre-commit hook that refuses conflict markers, private keys and tokens in staged changes ([`docs/specs/local-dev.md`](docs/specs/local-dev.md#git-hook)).
+
 <div align="center">
 
 <picture>

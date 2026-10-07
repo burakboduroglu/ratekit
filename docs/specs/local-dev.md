@@ -22,6 +22,10 @@ mvn -B verify
 java -jar ingest/target/ingest-0.1.0-SNAPSHOT.jar      # and rating, billing
 ```
 
+## Git hook
+
+Enable it once per clone: `git config core.hooksPath .githooks`. `.githooks/pre-commit` checks only the staged changes, in well under a second, with nothing but `git` and `grep`: it refuses merge-conflict markers, private keys, cloud and GitHub/Slack tokens, and anything under `docs/learning/` (personal notes, kept out of the public history). It does not build or test; CI does. For a false alarm, check it and commit with `--no-verify`.
+
 ## Images (pinned, checked 2026-10-03)
 
 | Service | Image | Host port |
