@@ -13,4 +13,10 @@ public class ApiExceptionHandler {
     public ProblemDetail publishFailed(EventPublishException e) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, "event could not be stored, retry");
     }
+
+    /** 422, not 400: the body is well-formed, but its time cannot be billed. Retrying will not help. */
+    @ExceptionHandler(EventTimeOutOfRangeException.class)
+    public ProblemDetail eventTimeOutOfRange(EventTimeOutOfRangeException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, e.getMessage());
+    }
 }

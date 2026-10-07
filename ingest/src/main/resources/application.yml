@@ -12,6 +12,15 @@ spring:
       properties:
         enable.idempotence: true
 
+ratekit:
+  ingest:
+    event-time:
+      # a client clock may run this far ahead of ours
+      max-future-skew: PT5M
+      # usage for a month is accepted this long after the month ends; keep it shorter than the gap
+      # before billing invoices the month (02:00 UTC on the 1st)
+      late-arrival-grace: PT1H
+
 management:
   endpoints:
     web:

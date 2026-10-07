@@ -62,6 +62,8 @@ Each service exposes `/actuator/health` and `/actuator/prometheus` on its port (
 
 ## Verify (as run on 2026-10-03)
 
+Since ADR 0007, ingest refuses usage for a closed month, so replaying the September events below needs `LATE_ARRIVAL_GRACE=P62D` (or wider) on `ingest`; the Quick start in the README shows the current flow.
+
 ```sh
 psq() { podman compose exec -T postgres psql -U ratekit -d ratekit "$@"; }
 psq < scripts/seed-demo.sql

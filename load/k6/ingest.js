@@ -39,7 +39,7 @@ export default function () {
     accountId: `load-acc-${Math.floor(Math.random() * ACCOUNTS)}`,
     meter: 'sms-load',
     quantity: 1,
-    occurredAt: '2026-09-15T10:00:00Z',
+    occurredAt: new Date().toISOString(),
   });
   const res = http.post(`${TARGET}/v1/events`, body, { headers });
   const ok = check(res, { 'status is 202': (r) => r.status === 202 });

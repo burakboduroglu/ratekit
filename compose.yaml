@@ -51,6 +51,8 @@ services:
         condition: service_healthy
     environment:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:19092
+      # how long after a month ends its usage is still accepted (ADR 0007); widen it only for a demo
+      RATEKIT_INGEST_EVENTTIME_LATEARRIVALGRACE: ${LATE_ARRIVAL_GRACE:-PT1H}
       JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=50
     mem_limit: 512m
     ports:

@@ -5,7 +5,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.burakboduroglu.ratekit.common.Topics;
 import io.github.burakboduroglu.ratekit.common.UsageEvent;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -19,8 +22,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.actuate.observability.AutoConfigureObservability;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.testcontainers.junit.jupiter.Container;
@@ -28,6 +34,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
+// The clock is fixed so the event dates below stay inside the accepted time window for good.
 // @SpringBootTest switches metric export off; turn it on to test the Prometheus endpoint
 @AutoConfigureObservability
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -37,6 +44,15 @@ class EventIngestIntegrationTest {
     @Container
     @ServiceConnection
     static final KafkaContainer KAFKA = new KafkaContainer(DockerImageName.parse("apache/kafka:4.3.1"));
+
+    @TestConfiguration
+    static class FixedClock {
+        @Bean
+        @Primary
+        Clock fixedClock() {
+            return Clock.fixed(Instant.parse("2026-10-03T12:00:00Z"), ZoneOffset.UTC);
+        }
+    }
 
     @Autowired
     TestRestTemplate http;
@@ -93,6 +109,18 @@ class EventIngestIntegrationTest {
         ResponseEntity<String> response = http.postForEntity("/v1/events", jsonRequest(body), String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void anEventFromAClosedMonthIsRefusedWith422AndTheReason() {
+        String body = """
+                {"eventId":"late-1","accountId":"acc-1","meter":"sms","quantity":1,"occurredAt":"2026-09-30T23:00:00Z"}""";
+
+        ResponseEntity<String> response = http.postForEntity("/v1/events", jsonRequest(body), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        assertThat(response.getBody()).contains("closed billing month");
+        assertThat(consumeAll()).noneMatch(r -> r.value().contains("\"late-1\""));
     }
 
     @Test

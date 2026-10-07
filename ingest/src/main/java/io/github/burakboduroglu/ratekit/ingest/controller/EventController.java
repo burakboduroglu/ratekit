@@ -32,6 +32,7 @@ public class EventController {
             description = "Validates the event and writes it to Kafka. Rating happens asynchronously.")
     @ApiResponse(responseCode = "202", description = "Stored in Kafka; will be rated")
     @ApiResponse(responseCode = "400", description = "Invalid event")
+    @ApiResponse(responseCode = "422", description = "occurredAt is in the future or in a month that is closed for billing")
     @ApiResponse(responseCode = "503", description = "Kafka did not acknowledge the write; retry")
     @PostMapping
     @ResponseStatus(HttpStatus.ACCEPTED)

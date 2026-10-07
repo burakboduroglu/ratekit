@@ -10,3 +10,4 @@ An ADR records one decision: the context, what was decided, the alternatives and
 | [0004](0004-retry-and-dead-letter.md) | Transient failures are retried with backoff; permanent ones go to the dead-letter topic at once | accepted |
 | [0005](0005-invoicing.md) | Invoicing is a plain scheduled run, one invoice per account and month, safe to repeat | accepted |
 | [0006](0006-metrics.md) | Metrics through Micrometer in Prometheus format; no collector in the repository | accepted |
+| [0007](0007-event-time-window.md) | ingest accepts `occurredAt` from the start of the open month (plus a one-hour grace after a month ends) to five minutes ahead; anything else gets `422` | accepted |

@@ -8,16 +8,18 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-/** Use case: accept a usage event. The place for ingest rules; today it hands the event to Kafka. */
+/** Use case: accept a usage event if its time can still be billed, then hand it to Kafka. */
 @Service
 public class EventIngestService {
 
     private static final Logger log = LoggerFactory.getLogger(EventIngestService.class);
 
+    private final EventTimeWindow window;
     private final EventPublisher publisher;
     private final Counter accepted;
 
-    public EventIngestService(EventPublisher publisher, MeterRegistry meters) {
+    public EventIngestService(EventTimeWindow window, EventPublisher publisher, MeterRegistry meters) {
+        this.window = window;
         this.publisher = publisher;
         this.accepted = Counter.builder("ratekit.events.accepted")
                 .description("Usage events written to Kafka and acknowledged by the broker")
@@ -25,6 +27,7 @@ public class EventIngestService {
     }
 
     public void accept(UsageEvent event) {
+        window.check(event);
         publisher.publish(event);
         accepted.increment();
         log.debug("event accepted: account={} event={}", event.accountId(), event.eventId());

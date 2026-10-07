@@ -88,7 +88,7 @@ Invoicing is a separate step. When a month has ended, `POST /v1/invoice-runs` on
 
 | Method | Path | Success | Errors |
 | --- | --- | --- | --- |
-| `POST` | `/v1/events` | `202 Accepted` with `{eventId, accountId, status: "ACCEPTED"}`; the event is stored in Kafka | `400` invalid event, `503` Kafka did not acknowledge |
+| `POST` | `/v1/events` | `202 Accepted` with `{eventId, accountId, status: "ACCEPTED"}`; the event is stored in Kafka | `400` invalid event, `422` `occurredAt` is in the future or in a month closed for billing, `503` Kafka did not acknowledge |
 
 ```json
 {
@@ -102,7 +102,7 @@ Invoicing is a separate step. When a month has ended, `POST /v1/invoice-runs` on
 
 - `eventId` must be unique per account; it is the idempotency key.
 - `quantity` is a positive whole number in the meter's smallest unit.
-- `occurredAt` is when the usage happened, not when it was sent. It selects the tariff version and the billing month.
+- `occurredAt` is when the usage happened, not when it was sent. It selects the tariff version and the billing month. It may be at most 5 minutes ahead of the server clock, and a month's usage is accepted until one hour after the month ends; after that the month belongs to billing and the event gets `422` ([ADR 0007](docs/adr/0007-event-time-window.md)).
 
 Swagger UI is at `http://localhost:8081/swagger-ui.html` and the raw spec at `http://localhost:8081/v3/api-docs` while `ingest` runs.
 
@@ -128,22 +128,33 @@ docker compose up -d --build          # or: podman compose up -d --build
 # 2. Create a demo account and tariff (100 free SMS a month, then 0.05 each)
 docker compose exec -T postgres psql -U ratekit -d ratekit < scripts/seed-demo.sql
 
-# 3. Send events
+# 3. Send events that happen now
+NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 curl -X POST localhost:8081/v1/events -H 'Content-Type: application/json' \
-  -d '{"eventId":"e-1","accountId":"acc-demo","meter":"sms","quantity":95,"occurredAt":"2026-09-15T10:00:00Z"}'
+  -d '{"eventId":"e-1","accountId":"acc-demo","meter":"sms","quantity":95,"occurredAt":"'$NOW'"}'
 curl -X POST localhost:8081/v1/events -H 'Content-Type: application/json' \
-  -d '{"eventId":"e-2","accountId":"acc-demo","meter":"sms","quantity":10,"occurredAt":"2026-09-15T11:00:00Z"}'
+  -d '{"eventId":"e-2","accountId":"acc-demo","meter":"sms","quantity":10,"occurredAt":"'$NOW'"}'
 
 # 4. Look at the charges: e-1 is free, e-2 pays for the 5 units over the quota
 docker compose exec -T postgres psql -U ratekit -d ratekit \
   -c "SELECT event_id, quantity, amount FROM charges ORDER BY id;"
-
-# 5. Invoice September (the month must have ended), then read the invoice
-curl -X POST localhost:8083/v1/invoice-runs -H 'Content-Type: application/json' -d '{"period":"2026-09"}'
-curl "localhost:8083/v1/invoices/acc-demo?period=2026-09"
 ```
 
-The invoice shows one `sms` line of 105 units and a total of `0.2500`. Running step 5 again creates nothing: `{"invoicesCreated":0,"alreadyInvoiced":1}`. Sending the same `eventId` twice produces one charge. Stop everything with `docker compose down`.
+Sending the same `eventId` twice produces one charge. An event dated next week, or last month, gets `422`.
+
+**Invoicing** needs a month that has ended, and ingest refuses usage for a month once billing may have invoiced it. To try it at once, widen ingest's late-arrival window for the demo, send usage for last month, and invoice it:
+
+```sh
+LATE_ARRIVAL_GRACE=P62D docker compose up -d ingest       # demo only; the default is PT1H
+LAST=$(date -u -v1d -v-1m +%Y-%m)                         # GNU date: date -u -d "$(date -u +%Y-%m-01) -1 month" +%Y-%m
+curl -X POST localhost:8081/v1/events -H 'Content-Type: application/json' \
+  -d '{"eventId":"e-3","accountId":"acc-demo","meter":"sms","quantity":105,"occurredAt":"'$LAST'-15T10:00:00Z"}'
+curl -X POST localhost:8083/v1/invoice-runs -H 'Content-Type: application/json' -d '{"period":"'$LAST'"}'
+curl "localhost:8083/v1/invoices/acc-demo?period=$LAST"
+docker compose up -d ingest                               # back to the one-hour window
+```
+
+The invoice shows one `sms` line of 105 units and a total of `0.2500` (100 free, 5 at 0.05). Running the invoice again creates nothing: `{"invoicesCreated":0,"alreadyInvoiced":1}`. Stop everything with `docker compose down`.
 
 **Services on the host** (to debug in an IDE): start only the infrastructure, build, and run the jars in separate terminals. The demo steps above work unchanged.
 
@@ -246,7 +257,7 @@ One rating thread handles about 1,400 events per second; three together drained 
 | GitHub Actions CI: build, test (Testcontainers), build the three images | |
 | Metrics, a k6 load test and measured results | |
 
-Known limits today: a transient failure can hold up its partition for up to 7.5 seconds (configurable). Dead letters are inspected and replayed by hand. Events that arrive out of order are rated in arrival order. Rejections for insufficient balance are not reported back to the sender, who already received `202`. A charge rated after its month was invoiced is not added to that invoice (an issued invoice is never rewritten). `billing` reads `rating`'s `charges` table directly, so the two services share a database. An invoice run is synchronous. The full stack needs about 1.7 GB, which is nearly all of a default 2 GB Podman VM (4 GB is recommended).
+Known limits today: a transient failure can hold up its partition for up to 7.5 seconds (configurable). Dead letters are inspected and replayed by hand. Events that arrive out of order are rated in arrival order. Rejections for insufficient balance are not reported back to the sender, who already received `202`. ingest refuses usage for a month once its one-hour grace has passed, but an event already accepted and still waiting in Kafka when billing runs is rated after its month was invoiced and is not added to that invoice (an issued invoice is never rewritten). `billing` reads `rating`'s `charges` table directly, so the two services share a database. An invoice run is synchronous. The full stack needs about 1.7 GB, which is nearly all of a default 2 GB Podman VM (4 GB is recommended).
 
 ## Code structure
 
@@ -403,6 +414,8 @@ Defaults suit the Compose setup. Any property can be overridden with a Spring en
 | `spring.datasource.username`, `password` | `ratekit` | rating, billing |
 | `spring.kafka.consumer.group-id` | `ratekit-rating` | rating |
 | `spring.kafka.consumer.auto-offset-reset` | `earliest` | rating |
+| `ratekit.ingest.event-time.max-future-skew` | `PT5M` | ingest |
+| `ratekit.ingest.event-time.late-arrival-grace` | `PT1H` (compose: `LATE_ARRIVAL_GRACE`) | ingest |
 | `ratekit.rating.retry.max-retries` | `4` | rating |
 | `ratekit.rating.retry.initial-interval-ms` | `500` | rating |
 | `ratekit.rating.retry.multiplier` | `2.0` | rating |
