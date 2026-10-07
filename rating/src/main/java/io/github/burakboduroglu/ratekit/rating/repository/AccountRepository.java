@@ -1,6 +1,8 @@
 package io.github.burakboduroglu.ratekit.rating.repository;
 
 import io.github.burakboduroglu.ratekit.common.Money;
+import io.github.burakboduroglu.ratekit.rating.domain.Account;
+import java.util.Optional;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -11,6 +13,27 @@ public class AccountRepository {
 
     AccountRepository(JdbcClient jdbc) {
         this.jdbc = jdbc;
+    }
+
+    /** @return true if the account was created, false if one with this id already exists */
+    public boolean create(String accountId) {
+        return jdbc.sql("INSERT INTO accounts (id) VALUES (?) ON CONFLICT DO NOTHING")
+                .param(accountId)
+                .update() == 1;
+    }
+
+    public Optional<Account> find(String accountId) {
+        return jdbc.sql("SELECT id, balance FROM accounts WHERE id = ?")
+                .param(accountId)
+                .query((rs, row) -> new Account(rs.getString("id"), new Money(rs.getBigDecimal("balance"))))
+                .optional();
+    }
+
+    /** Adds {@code amount} in one statement, so it cannot lose a concurrent deduction. */
+    public void credit(String accountId, Money amount) {
+        jdbc.sql("UPDATE accounts SET balance = balance + ?, updated_at = now() WHERE id = ?")
+                .params(amount.amount(), accountId)
+                .update();
     }
 
     public boolean exists(String accountId) {

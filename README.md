@@ -46,7 +46,7 @@ An event enters through a REST endpoint and is written to Kafka. A rating servic
 | --- | --- | --- | --- |
 | `common` | Shared library | The event contract (`UsageEvent`), the money rules (`Money`) and topic names. Plain Java, no Spring, so every service agrees on the same types and the same rounding. | none |
 | `ingest` | Producer, the front door | `POST /v1/events` validates an event and writes it to Kafka, keyed by account. Answers `202` only after Kafka has acknowledged the write. Serves the OpenAPI spec and Swagger UI. | 8081 |
-| `rating` | Consumer, the pricing core | Reads events from Kafka, skips duplicates, finds the tariff version in force at the event's time, computes the charge, deducts it from the prepaid balance and stores it. Refuses events the account cannot afford and dead-letters events it cannot process. Owns the database schema. | 8082 |
+| `rating` | Consumer, the pricing core | Reads events from Kafka, skips duplicates, finds the tariff version in force at the event's time, computes the charge, deducts it from the prepaid balance and stores it. Refuses events the account cannot afford and dead-letters events it cannot process. Opens accounts and takes top-ups over HTTP. Owns the database schema. | 8082 |
 | `billing` | Invoicing | Turns a finished month's charges into one invoice per account, with a line per meter. Safe to run again: an account already invoiced for the month is skipped. Reads `rating`'s `charges` table and owns `invoices` and `invoice_lines`. | 8083 |
 
 ## How an event flows
@@ -106,6 +106,16 @@ Invoicing is a separate step. When a month has ended, `POST /v1/invoice-runs` on
 
 Swagger UI is at `http://localhost:8081/swagger-ui.html` and the raw spec at `http://localhost:8081/v3/api-docs` while `ingest` runs.
 
+`rating` (port 8082) manages accounts and their prepaid balance, documented at `http://localhost:8082/swagger-ui.html`:
+
+| Method | Path | Success | Errors |
+| --- | --- | --- | --- |
+| `POST` | `/v1/accounts` with `{"accountId": "acc-42"}` | `201` with `{accountId, balance}`; the balance starts at `0.0000` | `400` invalid id, `409` already exists |
+| `GET` | `/v1/accounts/{accountId}` | `200` with `{accountId, balance}` | `404` no such account |
+| `POST` | `/v1/accounts/{accountId}/top-ups` with `{"topUpId": "tu-1", "amount": "10.00"}` | `201` credited, or `200` if this `topUpId` was already credited (nothing changes); both return the new balance | `400` amount not positive or more than 4 decimals, `404` no such account, `409` `topUpId` reused with another amount |
+
+Money enters a balance only through a top-up, and the caller-chosen `topUpId` makes a retry safe ([ADR 0008](docs/adr/0008-accounts-and-top-ups.md)). There is no authentication yet: do not expose these ports.
+
 `billing` (port 8083) has its own API, also documented at `http://localhost:8083/swagger-ui.html`:
 
 | Method | Path | Success | Errors |
@@ -125,8 +135,11 @@ Requires a container runtime with Compose (Docker or Podman). To build and test 
 # 1. Start the stack (the first build takes a few minutes)
 docker compose up -d --build          # or: podman compose up -d --build
 
-# 2. Create a demo account and tariff (100 free SMS a month, then 0.05 each)
+# 2. Create a demo tariff (100 free SMS a month, then 0.05 each), then open an account and top it up
 docker compose exec -T postgres psql -U ratekit -d ratekit < scripts/seed-demo.sql
+curl -X POST localhost:8082/v1/accounts -H 'Content-Type: application/json' -d '{"accountId":"acc-demo"}'
+curl -X POST localhost:8082/v1/accounts/acc-demo/top-ups -H 'Content-Type: application/json' \
+  -d '{"topUpId":"tu-1","amount":"100.00"}'
 
 # 3. Send events that happen now
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -135,9 +148,10 @@ curl -X POST localhost:8081/v1/events -H 'Content-Type: application/json' \
 curl -X POST localhost:8081/v1/events -H 'Content-Type: application/json' \
   -d '{"eventId":"e-2","accountId":"acc-demo","meter":"sms","quantity":10,"occurredAt":"'$NOW'"}'
 
-# 4. Look at the charges: e-1 is free, e-2 pays for the 5 units over the quota
+# 4. Look at the charges: e-1 is free, e-2 pays for the 5 units over the quota, so the balance is 99.7500
 docker compose exec -T postgres psql -U ratekit -d ratekit \
   -c "SELECT event_id, quantity, amount FROM charges ORDER BY id;"
+curl localhost:8082/v1/accounts/acc-demo
 ```
 
 Sending the same `eventId` twice produces one charge. An event dated next week, or last month, gets `422`.
@@ -268,21 +282,24 @@ ingest/  io.github.burakboduroglu.ratekit.ingest
   controller/   EventController
   dto/          EventRequest, EventResponse
   mapper/       EventMapper
-  service/      EventIngestService
+  service/      EventIngestService, EventTimeWindow
   messaging/    EventPublisher
-  config/       KafkaTopicConfig, KafkaProducerConfig
-  exception/    EventPublishException, ApiExceptionHandler
+  config/       KafkaTopicConfig, KafkaProducerConfig, IngestConfig, EventTimeProperties
+  exception/    EventPublishException, EventTimeOutOfRangeException, ApiExceptionHandler
 
 rating/  io.github.burakboduroglu.ratekit.rating
+  controller/   AccountController
+  dto/          CreateAccountRequest, AccountResponse, TopUpRequest, TopUpResponse
   messaging/    UsageEventListener, DeadLetterProducer
-  service/      RatingService
+  service/      RatingService, AccountService, TopUpService
   repository/   AccountRepository, ChargeRepository, ProcessedEventRepository,
-                RejectedEventRepository, TariffRepository
-  mapper/       TariffMapper
+                RejectedEventRepository, TariffRepository, TopUpRepository
+  mapper/       TariffMapper, AccountMapper
   config/       KafkaTopicConfig, DeadLetterConfig, ConsumerErrorHandlingConfig, RetryProperties
-  exception/    UnknownAccountException
+  exception/    UnknownAccountException, InvalidTariffException, AccountNotFoundException,
+                AccountAlreadyExistsException, TopUpConflictException, ApiExceptionHandler
   domain/       PriceModel, FlatPrice, TieredPrice, FreeQuotaThenFlat,
-                Tariff, TariffBook, Rater, Charge, NoTariffException
+                Tariff, TariffBook, Rater, Charge, Account, NoTariffException
 
 billing/  io.github.burakboduroglu.ratekit.billing
   controller/   InvoiceRunController, InvoiceController
