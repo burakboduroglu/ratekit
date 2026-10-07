@@ -5,7 +5,7 @@
 ARG SERVICE
 
 # ---- build: compile the service and the modules it needs ----
-FROM maven:3.9.16-eclipse-temurin-21 AS build
+FROM maven:3.9-eclipse-temurin-26 AS build
 ARG SERVICE
 WORKDIR /build
 
