@@ -24,7 +24,7 @@ RUN --mount=type=cache,target=/root/.m2 \
     mvn -B -q -pl ${SERVICE} -am package -DskipTests
 
 # ---- runtime: only a JRE and the jar ----
-FROM eclipse-temurin:21.0.12.1_1-jre
+FROM eclipse-temurin:24.0.2_12-jre
 ARG SERVICE
 LABEL org.opencontainers.image.title="ratekit-${SERVICE}" \
       org.opencontainers.image.source="https://github.com/burakboduroglu/ratekit" \
