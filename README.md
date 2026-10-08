@@ -213,6 +213,8 @@ DOCKER_HOST=unix:///var/run/docker.sock mvn -B verify
 
 Compose services and their pinned images are described in [`docs/specs/local-dev.md`](docs/specs/local-dev.md).
 
+**Secure Kafka (optional):** `scripts/kafka-certs.sh`, then `docker compose -f compose.yaml -f compose.secure.yaml up -d --build` runs the same stack with Kafka over SASL_SSL, one user per service and ACLs; see [Secure Kafka](docs/specs/local-dev.md#secure-kafka) and [ADR 0018](docs/adr/0018-kafka-transport-security.md).
+
 ## Testing
 
 `mvn -B verify` runs unit tests and integration tests. The integration tests start real Kafka and PostgreSQL containers, so a running container runtime is required.

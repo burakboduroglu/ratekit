@@ -1,0 +1,145 @@
+# Opt-in secure Kafka (ADR 0018): SASL_SSL with SCRAM-SHA-512 on both client listeners, one user per
+# service, and ACLs. Generate the certificates once, then layer this file over compose.yaml:
+#
+#   scripts/kafka-certs.sh
+#   podman compose -f compose.yaml -f compose.secure.yaml up -d --build
+#
+# Passwords below are dev defaults; override them with the environment variables named in each
+# ${...}. SCRAM credentials are written when the broker's storage is first formatted, so after
+# changing a password run `podman compose -f compose.yaml -f compose.secure.yaml down` (the broker
+# keeps no volume) before starting again. Passwords must not contain quotes or shell characters.
+
+x-kafka-secrets: &kafka-secrets
+  - ./.kafka-certs/secrets:/etc/kafka/secrets:ro
+
+# what every service needs to talk to the secured broker; only the user differs
+x-kafka-client: &kafka-client
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:19092
+  SPRING_KAFKA_SECURITY_PROTOCOL: SASL_SSL
+  SPRING_KAFKA_PROPERTIES_SASL_MECHANISM: SCRAM-SHA-512
+  SPRING_KAFKA_PROPERTIES_SSL_TRUSTSTORE_LOCATION: /etc/kafka/secrets/truststore.p12
+  SPRING_KAFKA_PROPERTIES_SSL_TRUSTSTORE_TYPE: PKCS12
+  SPRING_KAFKA_PROPERTIES_SSL_TRUSTSTORE_PASSWORD: ${KAFKA_STORE_PASSWORD:-ratekit-dev-store}
+
+services:
+  kafka:
+    volumes: *kafka-secrets
+    # Storage must be formatted with the SCRAM users before the image's own start script runs: the
+    # image formats storage itself but has no way to add SCRAM credentials (kafka-storage --add-scram).
+    # A throwaway properties file is enough for the format step; the broker's real configuration still
+    # comes from the KAFKA_* variables. The image's start script then finds the storage formatted.
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        cat > /tmp/format.properties <<EOF
+        process.roles=broker,controller
+        node.id=1
+        controller.quorum.voters=1@kafka:9093
+        controller.listener.names=CONTROLLER
+        log.dirs=/tmp/kafka-logs
+        listeners=INTERNAL://:19092,CONTROLLER://:9093
+        listener.security.protocol.map=INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+        inter.broker.listener.name=INTERNAL
+        EOF
+        /opt/kafka/bin/kafka-storage.sh format --ignore-formatted -t "$$CLUSTER_ID" -c /tmp/format.properties \
+          --add-scram 'SCRAM-SHA-512=[name=admin,password=${KAFKA_ADMIN_PASSWORD:-ratekit-dev-admin}]' \
+          --add-scram 'SCRAM-SHA-512=[name=ingest,password=${KAFKA_INGEST_PASSWORD:-ratekit-dev-ingest}]' \
+          --add-scram 'SCRAM-SHA-512=[name=rating,password=${KAFKA_RATING_PASSWORD:-ratekit-dev-rating}]' \
+          --add-scram 'SCRAM-SHA-512=[name=billing,password=${KAFKA_BILLING_PASSWORD:-ratekit-dev-billing}]'
+        exec /etc/kafka/docker/run
+    environment:
+      CLUSTER_ID: 5L6g3nShT-eMCtK--X86sw
+      # clients (HOST, INTERNAL) are authenticated and encrypted; the controller listener stays plain,
+      # on the compose network only, and is not published
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: HOST:SASL_SSL,INTERNAL:SASL_SSL,CONTROLLER:PLAINTEXT
+      KAFKA_SASL_ENABLED_MECHANISMS: SCRAM-SHA-512
+      KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: SCRAM-SHA-512
+      # the broker's own login on both client listeners (inter-broker traffic runs on INTERNAL as admin)
+      # (the image maps _ to a dot, __ to an underscore and ___ to a dash, so SCRAM___SHA___512 is scram-sha-512)
+      KAFKA_LISTENER_NAME_HOST_SCRAM___SHA___512_SASL_JAAS_CONFIG: >-
+        org.apache.kafka.common.security.scram.ScramLoginModule required
+        username="admin" password="${KAFKA_ADMIN_PASSWORD:-ratekit-dev-admin}";
+      KAFKA_LISTENER_NAME_INTERNAL_SCRAM___SHA___512_SASL_JAAS_CONFIG: >-
+        org.apache.kafka.common.security.scram.ScramLoginModule required
+        username="admin" password="${KAFKA_ADMIN_PASSWORD:-ratekit-dev-admin}";
+      # ACLs: deny unless allowed; admin is the only super user. The controller listener is plain, so
+      # its (anonymous) traffic is the broker itself, which has to be trusted there.
+      KAFKA_AUTHORIZER_CLASS_NAME: org.apache.kafka.metadata.authorizer.StandardAuthorizer
+      KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "false"
+      KAFKA_SUPER_USERS: User:admin;User:ANONYMOUS
+      # TLS: set directly, because the image only fills these in itself when an advertised listener URL
+      # starts with SSL:// or SASL_SSL://, and ours are named HOST and INTERNAL
+      KAFKA_SSL_KEYSTORE_LOCATION: /etc/kafka/secrets/broker.p12
+      KAFKA_SSL_KEYSTORE_TYPE: PKCS12
+      KAFKA_SSL_KEYSTORE_PASSWORD: ${KAFKA_STORE_PASSWORD:-ratekit-dev-store}
+      KAFKA_SSL_KEY_PASSWORD: ${KAFKA_STORE_PASSWORD:-ratekit-dev-store}
+      # the broker trusts the CA too, because it is a client of its own INTERNAL listener
+      KAFKA_SSL_TRUSTSTORE_LOCATION: /etc/kafka/secrets/truststore.p12
+      KAFKA_SSL_TRUSTSTORE_TYPE: PKCS12
+      KAFKA_SSL_TRUSTSTORE_PASSWORD: ${KAFKA_STORE_PASSWORD:-ratekit-dev-store}
+    healthcheck:
+      test: !override ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:19092 --command-config /etc/kafka/secrets/client.properties >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  # One-shot: grants each service only what it uses, then exits. The services wait for it.
+  kafka-init:
+    image: apache/kafka:4.3.1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    volumes: *kafka-secrets
+    environment:
+      KAFKA_HEAP_OPTS: -Xms64m -Xmx128m
+    restart: "no"
+    entrypoint:
+      - sh
+      - -ec
+      - |
+        acl() { /opt/kafka/bin/kafka-acls.sh --bootstrap-server kafka:19092 --command-config /etc/kafka/secrets/client.properties --add "$$@"; }
+        # ingest: write usage events (Create and Describe because its KafkaAdmin makes sure the topic exists)
+        acl --allow-principal User:ingest --operation Write --operation Describe --operation Create --topic usage-events
+        # rating: read usage events as its consumer group, write dead letters (and make sure that topic exists)
+        acl --allow-principal User:rating --operation Read --operation Describe --topic usage-events
+        acl --allow-principal User:rating --operation Read --group ratekit-rating
+        acl --allow-principal User:rating --operation Write --operation Describe --operation Create --topic usage-events.dlq
+        # billing: describeTopics and listOffsets need Describe on the topic, listConsumerGroupOffsets
+        # needs Describe on the group (and on the topic); nothing is read or written
+        acl --allow-principal User:billing --operation Describe --topic usage-events
+        acl --allow-principal User:billing --operation Describe --group ratekit-rating
+
+  ingest:
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    volumes: *kafka-secrets
+    environment:
+      <<: *kafka-client
+      SPRING_KAFKA_PROPERTIES_SASL_JAAS_CONFIG: >-
+        org.apache.kafka.common.security.scram.ScramLoginModule required
+        username="ingest" password="${KAFKA_INGEST_PASSWORD:-ratekit-dev-ingest}";
+
+  rating:
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    volumes: *kafka-secrets
+    environment:
+      <<: *kafka-client
+      SPRING_KAFKA_PROPERTIES_SASL_JAAS_CONFIG: >-
+        org.apache.kafka.common.security.scram.ScramLoginModule required
+        username="rating" password="${KAFKA_RATING_PASSWORD:-ratekit-dev-rating}";
+
+  billing:
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    volumes: *kafka-secrets
+    environment:
+      <<: *kafka-client
+      SPRING_KAFKA_PROPERTIES_SASL_JAAS_CONFIG: >-
+        org.apache.kafka.common.security.scram.ScramLoginModule required
+        username="billing" password="${KAFKA_BILLING_PASSWORD:-ratekit-dev-billing}";

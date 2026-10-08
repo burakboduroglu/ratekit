@@ -64,6 +64,32 @@ The whole stack uses about 1.8 GB of RAM inside the Podman VM: Kafka ~350 MB wit
 
 Each service exposes `/actuator/health` and `/actuator/prometheus` on its port (8081, 8082, 8083). `load/run.sh` drives ingest with k6 (run as a container, nothing to install) and reports how long rating needs to catch up; set `DASHBOARD=1` for k6's live charts on http://localhost:5665. Commands and results are in `docs/perf.md`. Rating's consumer threads are set with `RATING_CONCURRENCY` (default 1).
 
+## Secure Kafka
+
+Opt-in, for trying Kafka with authentication, encryption and ACLs ([ADR 0018](../adr/0018-kafka-transport-security.md)). The default stack stays plaintext.
+
+```sh
+scripts/kafka-certs.sh        # throwaway CA, broker keystore, truststore, admin client.properties -> .kafka-certs/ (untracked); needs keytool
+podman compose -f compose.yaml -f compose.secure.yaml up -d --build
+podman compose -f compose.yaml -f compose.secure.yaml down       # same two files; the broker keeps no volume
+```
+
+- **What changes:** the HOST (`localhost:9092`) and INTERNAL (`kafka:19092`) listeners use `SASL_SSL` with `SCRAM-SHA-512`; the controller listener stays internal. Users: `ingest`, `rating`, `billing` and `admin` (broker and CLI). A one-shot `kafka-init` container adds ACLs: ingest writes `usage-events`; rating reads it as group `ratekit-rating` and writes `usage-events.dlq`; billing may only describe `usage-events` and the group (all it needs for `describeTopics`, `listOffsets` and `listConsumerGroupOffsets`).
+- **Passwords** are development defaults (`ratekit-dev-<user>`, store password `ratekit-dev-store`); override with `KAFKA_ADMIN_PASSWORD`, `KAFKA_INGEST_PASSWORD`, `KAFKA_RATING_PASSWORD`, `KAFKA_BILLING_PASSWORD` and `KAFKA_STORE_PASSWORD` (the same variables for `scripts/kafka-certs.sh` and `up`). SCRAM users are written when the broker is first formatted, so after a change run `down` first.
+- **Services** need no code change: the overlay sets `SPRING_KAFKA_SECURITY_PROTOCOL`, `SPRING_KAFKA_PROPERTIES_SASL_MECHANISM`, `..._SASL_JAAS_CONFIG` and `..._SSL_TRUSTSTORE_*`.
+- **CLI:** `.kafka-certs/secrets` is mounted at `/etc/kafka/secrets` in the broker, with `client.properties` holding the admin login. The dead-letter command from the README becomes:
+
+  ```sh
+  podman compose -f compose.yaml -f compose.secure.yaml exec kafka /opt/kafka/bin/kafka-console-consumer.sh \
+    --bootstrap-server localhost:9092 --command-config /etc/kafka/secrets/client.properties \
+    --topic usage-events.dlq --from-beginning
+  ```
+
+- **`podman-compose` ignores `service_completed_successfully`**, so the services may start before the ACLs are in; they fail, and `restart: on-failure` brings them up within a few seconds.
+- Not covered by `mvn verify` (the Testcontainers tests use a plain broker).
+
+Verified on 2026-10-08 (Podman, `apache/kafka:4.3.1`): the README Quick start worked unchanged (charges `0.0000` and `0.2500`, balance `99.7500`), an event for an unknown account reached `usage-events.dlq` through rating's own producer, and an invoice run answered `{"invoicesCreated":0,"alreadyInvoiced":0}` after billing's admin calls succeeded. Denied as intended: reading `usage-events` as `ingest` (`GroupAuthorizationException`), writing `usage-events` as `billing` (`ClusterAuthorizationException`), writing `usage-events.dlq` as `ingest` (`TOPIC_AUTHORIZATION_FAILED`), a wrong password (`SaslAuthenticationException`) and a `PLAINTEXT` client (timeout).
+
 ## Verify (as run on 2026-10-03)
 
 Since ADR 0017 every `/v1` call below also needs an `X-Api-Key` header: `local-shop-key` for events, `local-operator-key` for everything else (compose's defaults). Since ADR 0008 `seed-demo.sql` holds only the tariff; open `acc-demo` and top it up through `POST /v1/accounts` first. Since ADR 0007, ingest refuses usage for a closed month, so replaying the September events below needs `LATE_ARRIVAL_GRACE=P62D` (or wider) on `ingest`; the Quick start in the README shows the current flow.
