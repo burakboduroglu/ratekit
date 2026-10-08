@@ -3,7 +3,7 @@
 Design inputs: `docs/research/2026-10-03-kickoff.md` and the decisions in `AGENTS.md`.
 Stack: Java 21, Spring Boot 3, Maven multi-module, Kafka, PostgreSQL. Three services: `ingest`, `rating`, `billing`. Prepaid hard stop. At-least-once delivery with idempotent consumers. Apache-2.0.
 
-## Status (2026-10-03)
+## Status (2026-10-08)
 
 Tasks 0 to 14 are done. What was added beyond the plan, because the work showed it was needed: ADR 0003 (package structure, after a review of the first flat layout), 0004 (retry and dead-letter policy), 0005 (invoicing) and 0006 (metrics); a REST API and an optional scheduler for invoice runs; `BillingPeriod` moved to `common` so rating and billing share one definition of a month; a benchmark of balance-deduction strategies. The CI pipeline ran green on GitHub (build and test, then three image builds). Measured results, with the machine and its limits, are in `docs/perf.md`.
 
@@ -19,7 +19,7 @@ A review after task 14 found gaps the README did not list. Each was closed in it
 
 ## Out of scope
 
-Diameter or session charging, reserve-and-commit, payments, subscriptions and plans, Debezium and outbox, multi-tenancy, a Debezium-style CDC, a frontend dashboard, GCP and Terraform. Revisit only after task 14.
+Diameter or session charging, reserve-and-commit, payments, subscriptions and plans, Debezium or any other CDC, multi-tenancy, a frontend dashboard, GCP and Terraform. Revisit only after task 14. The transactional outbox was listed here at first; it came in with ADR 0019, when billing got its own database.
 
 ## Facts checked on this machine (2026-10-03)
 
