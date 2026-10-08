@@ -18,4 +18,5 @@ An ADR records one decision: the context, what was decided, the alternatives and
 | [0012](0012-tariff-cache.md) | Rating keeps each meter's tariff versions in memory for 30 s, evicts a meter when its own API adds a version, and rereads when no cached version applies | accepted |
 | [0013](0013-migration-order.md) | rating, like billing, baselines a non-empty schema at version 0, so either service may migrate an empty database first | accepted |
 | [0014](0014-retention.md) | Rejected events and their idempotency rows are deleted 90 days after rejection, in batches; rated events stay with their charges | accepted |
-| [0015](0015-shared-api-key.md) | When `ratekit.security.api-key` is set, every `/v1` endpoint requires it in `X-Api-Key`; actuator and Swagger stay open | accepted |
+| [0015](0015-shared-api-key.md) | When `ratekit.security.api-key` is set, every `/v1` endpoint requires it in `X-Api-Key`; actuator and Swagger stay open | superseded by [0017](0017-api-keys-with-scopes.md) |
+| [0017](0017-api-keys-with-scopes.md) | `/v1` callers are named API keys with scopes (`events:write`, `accounts:read`, ...); `401` for an unknown key, `403` for a missing scope; the single `api-key` stays for one release | accepted |

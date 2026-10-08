@@ -1,6 +1,6 @@
 # 0015. A shared API key on the HTTP APIs
 
-Status: accepted (2026-10-07)
+Status: superseded by [0017](0017-api-keys-with-scopes.md) (2026-10-07)
 
 ## Context
 

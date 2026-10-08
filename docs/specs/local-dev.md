@@ -66,7 +66,7 @@ Each service exposes `/actuator/health` and `/actuator/prometheus` on its port (
 
 ## Verify (as run on 2026-10-03)
 
-Since ADR 0015 every `/v1` call below also needs `-H "X-Api-Key: local-dev-key"`. Since ADR 0008 `seed-demo.sql` holds only the tariff; open `acc-demo` and top it up through `POST /v1/accounts` first. Since ADR 0007, ingest refuses usage for a closed month, so replaying the September events below needs `LATE_ARRIVAL_GRACE=P62D` (or wider) on `ingest`; the Quick start in the README shows the current flow.
+Since ADR 0017 every `/v1` call below also needs an `X-Api-Key` header: `local-shop-key` for events, `local-operator-key` for everything else (compose's defaults). Since ADR 0008 `seed-demo.sql` holds only the tariff; open `acc-demo` and top it up through `POST /v1/accounts` first. Since ADR 0007, ingest refuses usage for a closed month, so replaying the September events below needs `LATE_ARRIVAL_GRACE=P62D` (or wider) on `ingest`; the Quick start in the README shows the current flow.
 
 ```sh
 psq() { podman compose exec -T postgres psql -U ratekit -d ratekit "$@"; }

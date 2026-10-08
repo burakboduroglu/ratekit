@@ -36,6 +36,11 @@ ratekit:
       late-arrival-grace: PT1H
       timeout: PT10S
 
+logging:
+  pattern:
+    # the API caller (ADR 0017) is in the MDC while a request runs
+    level: "%5p [%X{caller:-}]"
+
 management:
   endpoints:
     web:

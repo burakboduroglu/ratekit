@@ -28,7 +28,7 @@ fi
 echo "== k6: rates $RATES, ${STAGE_SECONDS}s per stage"
 start=$(date +%s)
 $CONTAINER run --rm -i --network "$NETWORK" --memory 300m ${dashboard[@]+"${dashboard[@]}"} \
-  -e TARGET=http://ingest:8081 -e API_KEY="${RATEKIT_API_KEY:-local-dev-key}" -e RUN="$RUN" -e STAGE_SECONDS="$STAGE_SECONDS" -e RATES="$RATES" \
+  -e TARGET=http://ingest:8081 -e API_KEY="${SHOP_API_KEY:-local-shop-key}" -e RUN="$RUN" -e STAGE_SECONDS="$STAGE_SECONDS" -e RATES="$RATES" \
   docker.io/grafana/k6:2.3.0 run - < load/k6/ingest.js | tee /tmp/ratekit-k6.log
 end=$(date +%s)
 

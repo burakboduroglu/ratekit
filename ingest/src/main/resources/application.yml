@@ -21,6 +21,11 @@ ratekit:
       # before billing invoices the month (02:00 UTC on the 1st)
       late-arrival-grace: PT1H
 
+logging:
+  pattern:
+    # the API caller (ADR 0017) is in the MDC while a request runs
+    level: "%5p [%X{caller:-}]"
+
 management:
   endpoints:
     web:

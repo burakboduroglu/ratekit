@@ -1,3 +1,17 @@
+# Per-caller API keys for /v1 (ADR 0017), shared by the three services; each service uses the scopes
+# that concern it. Defaults are for local use only; override with SHOP_API_KEY, OPERATOR_API_KEY and
+# READONLY_API_KEY.
+x-api-keys: &api-keys
+  RATEKIT_SECURITY_KEYS_0_NAME: shop
+  RATEKIT_SECURITY_KEYS_0_KEY: ${SHOP_API_KEY:-local-shop-key}
+  RATEKIT_SECURITY_KEYS_0_SCOPES: "events:write"
+  RATEKIT_SECURITY_KEYS_1_NAME: operator
+  RATEKIT_SECURITY_KEYS_1_KEY: ${OPERATOR_API_KEY:-local-operator-key}
+  RATEKIT_SECURITY_KEYS_1_SCOPES: "accounts:read,accounts:write,tariffs:read,tariffs:write,billing:read,billing:write"
+  RATEKIT_SECURITY_KEYS_2_NAME: readonly
+  RATEKIT_SECURITY_KEYS_2_KEY: ${READONLY_API_KEY:-local-readonly-key}
+  RATEKIT_SECURITY_KEYS_2_SCOPES: "accounts:read,tariffs:read,billing:read"
+
 services:
   postgres:
     image: postgres:17.11-alpine
@@ -53,8 +67,8 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:19092
       # how long after a month ends its usage is still accepted (ADR 0007); widen it only for a demo
       RATEKIT_INGEST_EVENTTIME_LATEARRIVALGRACE: ${LATE_ARRIVAL_GRACE:-PT1H}
-      # shared API key for /v1 (ADR 0015); override with RATEKIT_API_KEY
-      RATEKIT_SECURITY_APIKEY: ${RATEKIT_API_KEY:-local-dev-key}
+      # per-caller API keys for /v1 (ADR 0017), defined once in x-api-keys above
+      <<: *api-keys
       JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=50
     mem_limit: 512m
     ports:
@@ -83,8 +97,8 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:19092
       # listener threads; at most one per partition is useful (the topic has 3)
       SPRING_KAFKA_LISTENER_CONCURRENCY: ${RATING_CONCURRENCY:-1}
-      # shared API key for /v1 (ADR 0015); override with RATEKIT_API_KEY
-      RATEKIT_SECURITY_APIKEY: ${RATEKIT_API_KEY:-local-dev-key}
+      # per-caller API keys for /v1 (ADR 0017), defined once in x-api-keys above
+      <<: *api-keys
       JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=50
     mem_limit: 512m
     ports:
@@ -114,8 +128,8 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ratekit
       # billing asks Kafka how far rating has got before it invoices a month (ADR 0010)
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:19092
-      # shared API key for /v1 (ADR 0015); override with RATEKIT_API_KEY
-      RATEKIT_SECURITY_APIKEY: ${RATEKIT_API_KEY:-local-dev-key}
+      # per-caller API keys for /v1 (ADR 0017), defined once in x-api-keys above
+      <<: *api-keys
       JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=50
     mem_limit: 512m
     ports:
