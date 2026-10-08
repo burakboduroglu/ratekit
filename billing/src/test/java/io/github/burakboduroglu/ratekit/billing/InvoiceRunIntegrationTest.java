@@ -223,20 +223,6 @@ class InvoiceRunIntegrationTest {
     }
 
     @Test
-    void aChargeThatArrivesAfterTheInvoiceIsNotAddedByARerun() {
-        String a = id("a");
-        charge(a, "sms", 1, "0.05", "2026-05-10T10:00:00Z");
-        runs.run(month(2026, 5));
-
-        charge(a, "sms", 1, "0.05", "2026-05-20T10:00:00Z"); // late: rated after the invoice was made
-        RunSummary rerun = runs.run(month(2026, 5));
-
-        // known limit, documented in ADR 0005: an issued invoice is never rewritten
-        assertThat(rerun.created()).isZero();
-        assertThat(invoices.find(a, month(2026, 5)).orElseThrow().total()).isEqualTo(Money.of("0.05"));
-    }
-
-    @Test
     void manyTinyChargesSumExactlyWithoutRoundingAgain() {
         String a = id("a");
         for (int i = 0; i < 50; i++) {

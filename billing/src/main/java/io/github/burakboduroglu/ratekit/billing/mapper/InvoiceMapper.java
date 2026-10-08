@@ -1,6 +1,7 @@
 package io.github.burakboduroglu.ratekit.billing.mapper;
 
 import io.github.burakboduroglu.ratekit.billing.domain.Invoice;
+import io.github.burakboduroglu.ratekit.billing.dto.AdjustmentLineResponse;
 import io.github.burakboduroglu.ratekit.billing.dto.InvoiceLineResponse;
 import io.github.burakboduroglu.ratekit.billing.dto.InvoiceResponse;
 import io.github.burakboduroglu.ratekit.billing.dto.InvoiceRunResponse;
@@ -22,6 +23,10 @@ public class InvoiceMapper {
                 periods.format(invoice.period()),
                 invoice.lines().stream()
                         .map(l -> new InvoiceLineResponse(l.meter(), l.quantity(), l.amount().toString()))
+                        .toList(),
+                invoice.adjustments().stream()
+                        .map(a -> new AdjustmentLineResponse(periods.format(a.originalPeriod()), a.meter(), a.quantity(),
+                                a.amount().toString()))
                         .toList(),
                 invoice.total().toString());
     }

@@ -11,6 +11,7 @@ import io.github.burakboduroglu.ratekit.billing.config.BillingProperties;
 import io.github.burakboduroglu.ratekit.billing.exception.ChargesInFlightException;
 import io.github.burakboduroglu.ratekit.billing.exception.RatingNotCaughtUpException;
 import io.github.burakboduroglu.ratekit.billing.repository.ChargeUsageRepository;
+import io.github.burakboduroglu.ratekit.billing.repository.InvoicedPeriodRepository;
 import io.github.burakboduroglu.ratekit.common.BillingPeriod;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
@@ -29,6 +30,7 @@ class InvoiceRunServiceTest {
     private final RatingProgress progress = mock(RatingProgress.class);
     private final ChargeFeedProgress chargeFeed = mock(ChargeFeedProgress.class);
     private final InvoiceService invoices = mock(InvoiceService.class);
+    private final InvoicedPeriodRepository invoicedPeriods = mock(InvoicedPeriodRepository.class);
     private final BillingProperties properties = new BillingProperties(500,
             new BillingProperties.Scheduler(false, "0 0 2-23 1 * *"),
             new BillingProperties.RatingProgress(true, "ratekit-rating", Duration.ofHours(1), Duration.ofSeconds(10),
@@ -51,7 +53,7 @@ class InvoiceRunServiceTest {
 
         assertThatThrownBy(() -> at("2026-10-01T02:00:00Z").run(SEPTEMBER)).isInstanceOf(RatingNotCaughtUpException.class);
         verify(progress).caughtUpTo(Instant.parse("2026-10-01T01:00:00Z"));
-        verifyNoInteractions(chargeFeed, usage);
+        verifyNoInteractions(chargeFeed, usage, invoicedPeriods);
     }
 
     @Test
@@ -68,7 +70,7 @@ class InvoiceRunServiceTest {
     }
 
     private InvoiceRunService at(String now) {
-        return new InvoiceRunService(usage, progress, chargeFeed, invoices, properties,
+        return new InvoiceRunService(usage, progress, chargeFeed, invoices, invoicedPeriods, properties,
                 Clock.fixed(Instant.parse(now), ZoneOffset.UTC), new SimpleMeterRegistry());
     }
 }

@@ -130,7 +130,7 @@ A version is never edited: a price change is a new version, starting at least on
 | Method | Path | Success | Errors |
 | --- | --- | --- | --- |
 | `POST` | `/v1/invoice-runs` with `{"period": "2026-09"}` | `200` with `{period, invoicesCreated, alreadyInvoiced}` | `400` invalid period, `409` the month has not ended, rating has not yet rated everything accepted for it, or its charges have not all reached billing, `503` Kafka could not be asked |
-| `GET` | `/v1/invoices/{accountId}?period=2026-09` | `200` with the invoice: lines per meter and the total | `400` invalid period, `404` no such invoice |
+| `GET` | `/v1/invoices/{accountId}?period=2026-09` | `200` with the invoice: lines per meter, adjustments for late usage of earlier months, and the total | `400` invalid period, `404` no such invoice |
 
 Amounts are decimal strings with four digits (`"0.2500"`) so no client rounds them as floating point.
 
@@ -230,6 +230,7 @@ Compose services and their pinned images are described in [`docs/specs/local-dev
 | Billing | Totals are exact sums per meter, a rerun and four concurrent runs create each invoice once, the month includes its first instant and excludes the next month's, a usage is judged in UTC (01:00 in Turkey on 1 October is September), accounts are processed in batches, an open month is refused with 409, and the HTTP API answers with the right statuses |
 | Metrics | Actuator health and Prometheus endpoints answer, event and invoice counters and the rating timer increase with the events, endpoints that reveal configuration or memory stay closed |
 | Charge feed | A charge and its outbox row commit or roll back together, the relay sends one account's charges in order and marks them sent, then writes a marker on every partition; billing stores a redelivered charge once, and refuses to invoice until every partition's marker is newer than its check |
+| Adjustments | A late charge lands on the next invoice as an adjustment naming its month and counts in the total, a replayed and redelivered dead letter is billed once, an account with only late usage gets an invoice of adjustments, a month never run is not swept up, and two runs racing for one late charge bill it once |
 | Failure handling | An unknown account, a missing tariff and an invalid tariff row are dead-lettered without retrying, an unreadable message is dead-lettered with its original bytes, a transient failure is retried until it succeeds, exhausted retries end in the dead-letter topic, and in every case the next event on the partition is still rated |
 
 ## Continuous integration
@@ -290,7 +291,7 @@ One rating thread handles about 1,400 events per second; three together drained 
 | GitHub Actions CI: build, test (Testcontainers), build the three images | |
 | Metrics, a k6 load test and measured results | |
 
-Known limits today: a transient failure can hold up its partition for up to 7.5 seconds (configurable). Dead letters are inspected and replayed by hand. Events that arrive out of order are rated in arrival order. Rejections for insufficient balance are not reported back to the sender, who already received `202`. ingest refuses usage for a month once its one-hour grace has passed, and billing does not invoice a month until rating has committed every usage event written to Kafka before that grace ended (ADR 0010). An issued invoice is never rewritten, so usage that reaches rating later by other routes (a replayed dead letter) is not added to it. `billing` has its own database and waits, before invoicing, until rating's outbox relay has delivered every charge (ADR 0019). An invoice run is synchronous. The full stack needs about 1.7 GB, which is nearly all of a default 2 GB Podman VM (4 GB is recommended).
+Known limits today: a transient failure can hold up its partition for up to 7.5 seconds (configurable). Dead letters are inspected and replayed by hand. Events that arrive out of order are rated in arrival order. Rejections for insufficient balance are not reported back to the sender, who already received `202`. ingest refuses usage for a month once its one-hour grace has passed, and billing does not invoice a month until rating has committed every usage event written to Kafka before that grace ended (ADR 0010). An issued invoice is never rewritten; usage that reaches rating later by other routes (a replayed dead letter) is billed once, as an adjustment line naming its month, on the account's next invoice (ADR 0020). `billing` has its own database and waits, before invoicing, until rating's outbox relay has delivered every charge (ADR 0019). An invoice run is synchronous. The full stack needs about 1.7 GB, which is nearly all of a default 2 GB Podman VM (4 GB is recommended).
 
 ## Code structure
 
@@ -329,19 +330,20 @@ rating/  io.github.burakboduroglu.ratekit.rating
 
 billing/  io.github.burakboduroglu.ratekit.billing
   controller/   InvoiceRunController, InvoiceController
-  dto/          InvoiceRunRequest, InvoiceRunResponse, InvoiceResponse, InvoiceLineResponse
+  dto/          InvoiceRunRequest, InvoiceRunResponse, InvoiceResponse, InvoiceLineResponse,
+                AdjustmentLineResponse
   mapper/       InvoiceMapper, BillingPeriodMapper
   service/      InvoiceRunService, InvoiceService, RatingProgress, ChargeFeedProgress,
                 WatermarkChargeFeedProgress, ChargeIntakeService
   repository/   ChargeUsageRepository, InvoiceRepository, UsageRow, ReceivedChargeRepository,
-                ChargeFeedWatermarkRepository
+                ChargeFeedWatermarkRepository, InvoicedPeriodRepository
   scheduler/    InvoiceScheduler
   config/       BillingConfig, BillingProperties, ChargeFeedErrorHandlingConfig
   messaging/    KafkaRatingProgress, ChargeFeedListener
   exception/    InvalidPeriodException, PeriodNotClosedException, InvoiceNotFoundException,
                 RatingNotCaughtUpException, RatingProgressUnknownException, ChargesInFlightException,
                 ApiExceptionHandler
-  domain/       Invoice, InvoiceLine
+  domain/       Invoice, InvoiceLine, AdjustmentLine
 
 common/  io.github.burakboduroglu.ratekit.common
                 UsageEvent, ChargeEvent, ChargeFeedWatermark, Money, BillingPeriod, Topics
@@ -437,7 +439,9 @@ SOLID, as applied here:
 | --- | --- | --- |
 | `invoices` | One invoice per account and month, with the total | Unique `(account_id, period_start)`: the guard that makes a run repeatable |
 | `invoice_lines` | One line per meter on an invoice | Primary key `(invoice_id, meter)` |
-| `charges` | billing's copy of every charge, delivered over Kafka | Primary key `(account_id, event_id)`: a redelivery stores nothing |
+| `invoice_adjustments` | Late usage of an earlier, already invoiced month, per month and meter | Primary key `(invoice_id, original_period_start, meter)` |
+| `invoiced_periods` | Months whose invoice run has completed | An unbilled charge of such a month is late |
+| `charges` | billing's copy of every charge, delivered over Kafka, with the invoice that billed it | Primary key `(account_id, event_id)`: a redelivery stores nothing; `invoice_id` is set once, so a charge is billed once |
 | `charge_feed_watermarks` | The newest progress marker per partition of `charges` | An invoice run waits until every partition's marker is newer than its check |
 
 `rating` adds `charge_outbox`: one row per charge, written in the charge's transaction and marked sent once Kafka has acknowledged it. The contract between the services is `ChargeEvent` in `common` ([ADR 0019](docs/adr/0019-billing-database-and-charge-outbox.md)).

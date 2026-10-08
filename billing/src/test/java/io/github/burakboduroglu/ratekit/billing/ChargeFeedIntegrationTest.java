@@ -4,6 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
+import io.github.burakboduroglu.ratekit.billing.domain.AdjustmentLine;
+import io.github.burakboduroglu.ratekit.billing.domain.Invoice;
+import io.github.burakboduroglu.ratekit.billing.domain.InvoiceLine;
 import io.github.burakboduroglu.ratekit.billing.exception.ChargesInFlightException;
 import io.github.burakboduroglu.ratekit.billing.service.InvoiceRunService;
 import io.github.burakboduroglu.ratekit.billing.service.InvoiceService;
@@ -27,7 +30,10 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -52,12 +58,14 @@ import org.testcontainers.utility.DockerImageName;
  * The charge feed into billing's own database (ADR 0019), against real Kafka and PostgreSQL. The test
  * plays rating's relay: it writes charges and progress markers to the {@code charges} topic in the
  * same format. The clock is fixed at 15 June 2027 12:00 UTC; the usage topic does not exist, so the
- * rating check passes and only the charge feed decides.
+ * rating check passes and only the charge feed decides. The markers are shared by all tests, so the
+ * tests run in a fixed order: the one that needs old markers first.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "ratekit.billing.rating-progress.charge-feed-wait=PT1S",
         "ratekit.billing.rating-progress.clock-skew-margin=PT1S"})
 @Testcontainers
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class ChargeFeedIntegrationTest {
 
     @Container
@@ -113,6 +121,7 @@ class ChargeFeedIntegrationTest {
     }
 
     @Test
+    @Order(3)
     void aChargeDeliveredTwiceIsStoredOnce() {
         String account = "dup-" + UUID.randomUUID();
         ChargeEvent charge = charge(account, "e1", "0.0500", "2026-09-10T10:00:00Z");
@@ -129,6 +138,7 @@ class ChargeFeedIntegrationTest {
     }
 
     @Test
+    @Order(1)
     void aMonthIsNotInvoicedWhileChargesMayStillBeOnTheirWayAndIsOnceEveryPartitionHasANewerMarker() {
         String account = "feed-" + UUID.randomUUID();
         BillingPeriod september = BillingPeriod.of(YearMonth.of(2026, 9));
@@ -155,7 +165,45 @@ class ChargeFeedIntegrationTest {
         assertThat(invoices.find(account, september).orElseThrow().total()).isEqualTo(Money.of("0.25"));
     }
 
+    @Test
+    @Order(2)
+    void aDeadLetterReplayedForAnInvoicedMonthIsBilledOnceOnTheNextInvoice() {
+        String account = "replay-" + UUID.randomUUID();
+        BillingPeriod september = BillingPeriod.of(YearMonth.of(2026, 9));
+        BillingPeriod october = BillingPeriod.of(YearMonth.of(2026, 10));
+        for (int partition = 0; partition < 3; partition++) {
+            marker(partition, NOW.plusSeconds(5));
+        }
+        send(charge(account, "e1", "0.0500", "2026-09-10T10:00:00Z"));
+        awaitStored(account, "e1");
+        runs.run(september);
+        Money septemberTotal = invoices.find(account, september).orElseThrow().total();
+
+        // rating dead-lettered a September event; someone replays it after September was invoiced, and
+        // the relay happens to send its charge twice
+        ChargeEvent replayed = charge(account, "e-replayed", "0.2500", "2026-09-29T10:00:00Z");
+        send(replayed);
+        send(replayed);
+        send(charge(account, "e-october", "0.0500", "2026-10-02T10:00:00Z"));
+        awaitStored(account, "e-october");
+        runs.run(september);
+        runs.run(october);
+        runs.run(october);
+
+        assertThat(invoices.find(account, september).orElseThrow().total()).isEqualTo(septemberTotal);
+        Invoice invoice = invoices.find(account, october).orElseThrow();
+        assertThat(invoice.lines()).containsExactly(new InvoiceLine("sms", 5, Money.of("0.05")));
+        assertThat(invoice.adjustments()).containsExactly(new AdjustmentLine(september, "sms", 5, Money.of("0.25")));
+        assertThat(invoice.total()).isEqualTo(Money.of("0.30"));
+    }
+
     // ---- helpers ----
+
+    private void awaitStored(String account, String eventId) {
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM charges WHERE account_id = ? AND event_id = ?", Integer.class, account, eventId))
+                .isEqualTo(1));
+    }
 
     private static ChargeEvent charge(String account, String eventId, String amount, String occurredAt) {
         return new ChargeEvent(eventId, account, "sms", 5, new BigDecimal(amount), Instant.parse(occurredAt),

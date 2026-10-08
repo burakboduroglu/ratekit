@@ -41,7 +41,7 @@ class InvoiceTest {
     @Test
     void aTotalThatDisagreesWithTheLinesIsRejected() {
         assertThatThrownBy(() -> new Invoice("acc-1", period,
-                List.of(new InvoiceLine("sms", 1, Money.of("1"))), Money.of("2")))
+                List.of(new InvoiceLine("sms", 1, Money.of("1"))), List.of(), Money.of("2")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("does not equal");
     }
@@ -51,6 +51,34 @@ class InvoiceTest {
         assertThatThrownBy(() -> new InvoiceLine(" ", 1, Money.ZERO)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new InvoiceLine("sms", 0, Money.ZERO)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new InvoiceLine("sms", 1, Money.of("-0.0001"))).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void adjustmentsCountInTheTotalAndAreOrderedByMonthThenMeter() {
+        BillingPeriod july = BillingPeriod.of(YearMonth.of(2026, 7));
+        BillingPeriod august = BillingPeriod.of(YearMonth.of(2026, 8));
+        Invoice invoice = Invoice.of("acc-1", period, List.of(new InvoiceLine("sms", 10, Money.of("0.50"))), List.of(
+                new AdjustmentLine(august, "sms", 2, Money.of("0.10")),
+                new AdjustmentLine(july, "sms", 1, Money.of("0.05")),
+                new AdjustmentLine(august, "data-mb", 3, Money.of("0.0003"))));
+
+        assertThat(invoice.total()).isEqualTo(Money.of("0.6503"));
+        assertThat(invoice.adjustments()).extracting(a -> a.originalPeriod().month() + " " + a.meter())
+                .containsExactly("2026-07 sms", "2026-08 data-mb", "2026-08 sms");
+    }
+
+    @Test
+    void anInvoiceOfAdjustmentsOnlyIsValidButAnAdjustmentMustBeForAnEarlierMonth() {
+        BillingPeriod august = BillingPeriod.of(YearMonth.of(2026, 8));
+
+        assertThat(Invoice.of("acc-1", period, List.of(), List.of(new AdjustmentLine(august, "sms", 1, Money.of("0.05"))))
+                .total()).isEqualTo(Money.of("0.05"));
+        assertThatThrownBy(() -> Invoice.of("acc-1", period, List.of(),
+                List.of(new AdjustmentLine(period, "sms", 1, Money.of("0.05")))))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("before 2026-09");
+        assertThatThrownBy(() -> Invoice.of("acc-1", period, List.of(),
+                List.of(new AdjustmentLine(BillingPeriod.of(YearMonth.of(2026, 10)), "sms", 1, Money.of("0.05")))))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
