@@ -20,8 +20,11 @@ The default stack and the Testcontainers tests must stay as they are, because a 
   | rating | topic `usage-events` | Read, Describe |
   | rating | group `ratekit-rating` | Read |
   | rating | topic `usage-events.dlq` | Write, Describe, Create |
+  | rating | topic `charges` (since ADR 0019) | Write, Describe, Create |
   | billing | topic `usage-events` | Describe |
   | billing | group `ratekit-rating` | Describe |
+  | billing | topic `charges` (since ADR 0019) | Read, Describe |
+  | billing | group `ratekit-billing` (since ADR 0019) | Read |
 
   Create and Describe are there because ingest and rating make sure their own topic exists at startup (`KafkaAdmin`). For billing, `describeTopics` and `listOffsets` need Describe on the topic and `listConsumerGroupOffsets` needs Describe on the group (Kafka's authorization table for `OffsetFetch`, `Metadata` and `ListOffsets`); billing reads and writes nothing.
 - **Services stay unchanged.** They read only Spring properties, set by environment in the overlay: `spring.kafka.security.protocol`, `spring.kafka.properties.sasl.mechanism`, `sasl.jaas.config` and `ssl.truststore.*`. Rating's `DeadLetterProducer` (built from `KafkaProperties.buildProducerProperties`) and billing's `KafkaRatingProgress` (`Admin.create` from `KafkaAdmin`'s properties) both build on the common properties, so they inherit the security settings; this was checked on the running stack (a dead letter was written, an invoice run passed the rating check).

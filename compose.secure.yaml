@@ -106,10 +106,15 @@ services:
         acl --allow-principal User:rating --operation Read --operation Describe --topic usage-events
         acl --allow-principal User:rating --operation Read --group ratekit-rating
         acl --allow-principal User:rating --operation Write --operation Describe --operation Create --topic usage-events.dlq
+        # rating's outbox relay publishes charges and progress markers (ADR 0019) and creates the topic
+        acl --allow-principal User:rating --operation Write --operation Describe --operation Create --topic charges
         # billing: describeTopics and listOffsets need Describe on the topic, listConsumerGroupOffsets
         # needs Describe on the group (and on the topic); nothing is read or written
         acl --allow-principal User:billing --operation Describe --topic usage-events
         acl --allow-principal User:billing --operation Describe --group ratekit-rating
+        # billing consumes the charges feed into its own database as group ratekit-billing (ADR 0019)
+        acl --allow-principal User:billing --operation Read --operation Describe --topic charges
+        acl --allow-principal User:billing --operation Read --group ratekit-billing
 
   ingest:
     depends_on:

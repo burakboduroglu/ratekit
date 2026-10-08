@@ -138,6 +138,8 @@ Amounts are decimal strings with four digits (`"0.2500"`) so no client rounds th
 
 Requires a container runtime with Compose (Docker or Podman). To build and test from source you also need JDK 21 and Maven 3.9+.
 
+**The quickest tour:** start the stack, then `scripts/demo.sh` (add `--invoice` to also invoice last month). It prints every request and answer: tariff, account, a retried top-up, usage, the 401/403/422/400 gates, the resulting balance and charges. Set `COMPOSE="podman compose"` when using Podman.
+
 **Everything in containers** (PostgreSQL, Kafka and the three services, built from source):
 
 ```sh
