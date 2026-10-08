@@ -32,7 +32,8 @@ public class InvoiceRunController {
                     + "accounts that already have an invoice for the month are skipped.")
     @ApiResponse(responseCode = "200", description = "Run finished; the body says how many invoices were created")
     @ApiResponse(responseCode = "400", description = "The period is not a valid year and month")
-    @ApiResponse(responseCode = "409", description = "The month has not ended yet")
+    @ApiResponse(responseCode = "409", description = "The month has not ended yet, rating has not rated all of it, "
+            + "or its charges have not all reached billing")
     @PostMapping
     public InvoiceRunResponse run(@Valid @RequestBody InvoiceRunRequest request) {
         return mapper.toResponse(runs.run(periods.parse(request.period())));

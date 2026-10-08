@@ -1,5 +1,6 @@
 package io.github.burakboduroglu.ratekit.billing.config;
 
+import io.github.burakboduroglu.ratekit.billing.service.ChargeFeedProgress;
 import io.github.burakboduroglu.ratekit.billing.service.RatingProgress;
 import java.time.Clock;
 import org.slf4j.LoggerFactory;
@@ -26,5 +27,12 @@ public class BillingConfig {
     RatingProgress ratingProgressNotChecked() {
         LoggerFactory.getLogger(BillingConfig.class).warn("rating progress check is off: invoice runs do not wait for rating");
         return cutoff -> true;
+    }
+
+    /** Goes with {@link #ratingProgressNotChecked()}: invoices may then miss charges still on their way. */
+    @Bean
+    @ConditionalOnProperty(prefix = "ratekit.billing.rating-progress", name = "enabled", havingValue = "false")
+    ChargeFeedProgress chargeFeedNotChecked() {
+        return ratedBy -> true;
     }
 }

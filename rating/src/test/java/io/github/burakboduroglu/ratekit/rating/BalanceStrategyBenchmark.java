@@ -36,6 +36,7 @@ import org.testcontainers.utility.DockerImageName;
 @EnabledIfSystemProperty(named = "ratekit.bench", matches = "true")
 @SpringBootTest(properties = {
         "spring.kafka.listener.auto-startup=false",
+        "ratekit.rating.charge-feed.enabled=false",
         "spring.datasource.hikari.maximum-pool-size=16"})
 @Testcontainers
 class BalanceStrategyBenchmark {

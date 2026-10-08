@@ -11,6 +11,7 @@ import io.github.burakboduroglu.ratekit.billing.exception.PeriodNotClosedExcepti
 import io.github.burakboduroglu.ratekit.billing.service.InvoiceRunService;
 import io.github.burakboduroglu.ratekit.billing.service.InvoiceRunService.RunSummary;
 import io.github.burakboduroglu.ratekit.billing.exception.RatingNotCaughtUpException;
+import io.github.burakboduroglu.ratekit.billing.service.ChargeFeedProgress;
 import io.github.burakboduroglu.ratekit.billing.service.InvoiceService;
 import io.github.burakboduroglu.ratekit.billing.service.RatingProgress;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -50,15 +51,16 @@ import org.testcontainers.utility.DockerImageName;
 /**
  * Invoice runs against a real PostgreSQL. The clock is fixed at 15 June 2027, so every 2026 month is
  * closed and June 2027 is still open. Each test uses its own month, so tests cannot see each
- * other's charges.
+ * other's charges. Charges are written straight into billing's table; the charge feed that fills it
+ * in production has its own test.
  */
 // @SpringBootTest switches metric export off; turn it on to test the Prometheus endpoint
 @AutoConfigureObservability
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
-        "spring.flyway.locations=classpath:db/billing,classpath:db/billing-test",
         "ratekit.billing.batch-size=2",
-        // the Kafka check has its own test; here a switch stands in for it
-        "ratekit.billing.rating-progress.enabled=false"})
+        // no Kafka here: the checks have their own tests and a switch stands in for them
+        "ratekit.billing.rating-progress.enabled=false",
+        "spring.kafka.listener.auto-startup=false"})
 @Testcontainers
 class InvoiceRunIntegrationTest {
 
@@ -75,6 +77,12 @@ class InvoiceRunIntegrationTest {
         @Primary
         RatingProgress switchableRatingProgress() {
             return cutoff -> RATING_CAUGHT_UP.get();
+        }
+
+        @Bean
+        @Primary
+        ChargeFeedProgress allChargesDelivered() {
+            return ratedBy -> true;
         }
 
         @Bean
@@ -329,8 +337,8 @@ class InvoiceRunIntegrationTest {
     }
 
     private void charge(String account, String meter, long quantity, String amount, String occurredAt) {
-        jdbc.update("INSERT INTO charges (account_id, event_id, meter, quantity, amount, occurred_at) "
-                        + "VALUES (?, ?, ?, ?, ?::numeric, ?::timestamptz)",
+        jdbc.update("INSERT INTO charges (account_id, event_id, meter, quantity, amount, occurred_at, rated_at) "
+                        + "VALUES (?, ?, ?, ?, ?::numeric, ?::timestamptz, now())",
                 account, UUID.randomUUID().toString(), meter, quantity, amount, occurredAt);
     }
 

@@ -16,12 +16,14 @@ public class ChargeRepository {
         this.jdbc = jdbc;
     }
 
-    public void insert(UsageEvent event, Charge charge) {
-        jdbc.sql("INSERT INTO charges (account_id, event_id, meter, quantity, amount, tariff_id, occurred_at) "
-                        + "VALUES (?, ?, ?, ?, ?, ?, ?)")
+    /** @return the id of the new charge */
+    public long insert(UsageEvent event, Charge charge) {
+        return jdbc.sql("INSERT INTO charges (account_id, event_id, meter, quantity, amount, tariff_id, occurred_at) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id")
                 .params(event.accountId(), event.eventId(), event.meter(), event.quantity(),
                         charge.amount().amount(), charge.tariffId(), utc(event.occurredAt()))
-                .update();
+                .query(Long.class)
+                .single();
     }
 
     private static OffsetDateTime utc(java.time.Instant instant) {

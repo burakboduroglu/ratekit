@@ -26,8 +26,9 @@ import org.testcontainers.utility.DockerImageName;
  * default 90 days anything rejected before 17 March 2027 is old. The batch size is 2, so several
  * batches run.
  */
-// no Kafka container here: keep the listener from connecting to whatever runs on localhost:9092
-@SpringBootTest(properties = {"spring.kafka.listener.auto-startup=false", "ratekit.rating.retention.batch-size=2"})
+// no Kafka container here: keep the listener and the charge relay away from whatever runs on localhost:9092
+@SpringBootTest(properties = {"spring.kafka.listener.auto-startup=false", "ratekit.rating.charge-feed.enabled=false",
+        "ratekit.rating.retention.batch-size=2"})
 @Testcontainers
 class RetentionIntegrationTest {
 

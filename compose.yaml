@@ -29,6 +29,23 @@ services:
       timeout: 3s
       retries: 10
 
+  # billing's own database (ADR 0019): a second server, so neither service can read the other's tables
+  billing-postgres:
+    image: postgres:17.11-alpine
+    environment:
+      POSTGRES_USER: billing
+      POSTGRES_PASSWORD: billing
+      POSTGRES_DB: billing
+    ports:
+      - "5433:5432"
+    volumes:
+      - billing-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U billing -d billing"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   kafka:
     image: apache/kafka:4.3.1
     ports:
@@ -117,16 +134,16 @@ services:
         SERVICE: billing
     image: ratekit-billing:dev
     depends_on:
-      postgres:
+      billing-postgres:
         condition: service_healthy
-      # billing reads rating's charges table, which rating's migration creates
+      # rating creates the charges topic billing reads; started first, the broker would auto-create it
       rating:
         condition: service_healthy
       kafka:
         condition: service_healthy
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ratekit
-      # billing asks Kafka how far rating has got before it invoices a month (ADR 0010)
+      SPRING_DATASOURCE_URL: jdbc:postgresql://billing-postgres:5432/billing
+      # billing reads charges from Kafka (ADR 0019) and asks it how far rating has got (ADR 0010)
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:19092
       # per-caller API keys for /v1 (ADR 0017), defined once in x-api-keys above
       <<: *api-keys
@@ -143,3 +160,4 @@ services:
 
 volumes:
   pgdata:
+  billing-pgdata:

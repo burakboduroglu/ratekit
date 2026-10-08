@@ -13,14 +13,20 @@ public record BillingProperties(@DefaultValue("500") int batchSize, @DefaultValu
     }
 
     /**
-     * The check that rating has rated everything a closed month can still receive (ADR 0010).
+     * The check that rating has rated everything a closed month can still receive (ADR 0010), and that
+     * the resulting charges have reached billing's own table (ADR 0019).
      *
      * @param lateArrivalGrace must equal ingest's {@code ratekit.ingest.event-time.late-arrival-grace}:
      *                         ingest accepts usage for a month until this long after it ends
+     * @param clockSkewMargin  added to billing's clock before it is compared with the charge feed's
+     *                         markers, which carry rating's database clock
+     * @param chargeFeedWait   how long an invoice run waits for a marker newer than its check
      */
     public record RatingProgress(@DefaultValue("true") boolean enabled,
                                  @DefaultValue("ratekit-rating") String consumerGroup,
                                  @DefaultValue("PT1H") Duration lateArrivalGrace,
-                                 @DefaultValue("PT10S") Duration timeout) {
+                                 @DefaultValue("PT10S") Duration timeout,
+                                 @DefaultValue("PT1S") Duration clockSkewMargin,
+                                 @DefaultValue("PT30S") Duration chargeFeedWait) {
     }
 }

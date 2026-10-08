@@ -24,6 +24,11 @@ public class ApiExceptionHandler {
         return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
     }
 
+    @ExceptionHandler(ChargesInFlightException.class)
+    public ProblemDetail chargesInFlight(ChargesInFlightException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
+    }
+
     @ExceptionHandler(RatingProgressUnknownException.class)
     public ProblemDetail ratingProgressUnknown(RatingProgressUnknownException e) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());

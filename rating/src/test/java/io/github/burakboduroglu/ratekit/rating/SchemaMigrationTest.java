@@ -17,8 +17,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 /** Applies the Flyway migrations to a clean PostgreSQL and proves the safety constraints hold. */
-// no Kafka container here: keep the listener from connecting to whatever runs on localhost:9092
-@SpringBootTest(properties = "spring.kafka.listener.auto-startup=false")
+// no Kafka container here: keep the listener and the charge relay away from whatever runs on localhost:9092
+@SpringBootTest(properties = {"spring.kafka.listener.auto-startup=false", "ratekit.rating.charge-feed.enabled=false"})
 @Testcontainers
 class SchemaMigrationTest {
 
@@ -34,7 +34,7 @@ class SchemaMigrationTest {
         List<String> tables = jdbc.queryForList(
                 "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'", String.class);
 
-        assertThat(tables).contains("accounts", "tariffs", "processed_events", "charges", "rejected_events",
+        assertThat(tables).contains("accounts", "tariffs", "processed_events", "charges", "rejected_events", "charge_outbox",
                 "flyway_schema_history");
     }
 

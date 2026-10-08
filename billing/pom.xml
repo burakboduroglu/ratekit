@@ -28,7 +28,7 @@
       <artifactId>spring-boot-starter-jdbc</artifactId>
     </dependency>
     <dependency>
-      <!-- only the admin client: billing reads rating's consumer offsets, it never consumes -->
+      <!-- the charge feed listener, and the admin client that reads rating's consumer offsets -->
       <groupId>org.springframework.kafka</groupId>
       <artifactId>spring-kafka</artifactId>
     </dependency>

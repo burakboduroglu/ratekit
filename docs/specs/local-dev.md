@@ -9,14 +9,14 @@ Everything runs on Podman (no Docker installed here). `compose.yaml` and the `Do
 ```sh
 podman machine start                 # once per boot, if the VM is not running
 podman compose up -d --build         # first build takes a few minutes, later ones use the cache
-podman ps                            # five containers, all (healthy)
+podman ps                            # six containers, all (healthy)
 podman compose down                  # stop; add -v to also delete the PostgreSQL volume
 ```
 
 **B. Services on the host** (for debugging in an IDE): start only the infrastructure and run the jars yourself.
 
 ```sh
-podman compose up -d postgres kafka
+podman compose up -d postgres billing-postgres kafka
 export JAVA_HOME=/opt/homebrew/opt/openjdk@21
 mvn -B verify
 java -jar ingest/target/ingest-0.1.0-SNAPSHOT.jar      # and rating, billing
@@ -30,7 +30,8 @@ Enable it once per clone: `git config core.hooksPath .githooks`. `.githooks/pre-
 
 | Service | Image | Host port |
 |---|---|---|
-| PostgreSQL | `postgres:17.11-alpine` | 5432 (user, password and db: `ratekit`) |
+| PostgreSQL (rating) | `postgres:17.11-alpine` | 5432 (user, password and db: `ratekit`) |
+| PostgreSQL (billing, ADR 0019) | `postgres:17.11-alpine` | 5433 (user, password and db: `billing`) |
 | Kafka (KRaft, single broker) | `apache/kafka:4.3.1` | 9092 |
 | ingest | built from `Dockerfile` (`SERVICE=ingest`) | 8081 |
 | rating | built from `Dockerfile` (`SERVICE=rating`) | 8082 |
@@ -50,7 +51,7 @@ One `Dockerfile` at the repository root builds any service: `--build-arg SERVICE
 
 ## Start order and health
 
-`depends_on` with `condition: service_healthy` makes the order explicit: PostgreSQL and Kafka first, then `ingest` and `rating`, and `billing` last because it reads the `charges` table that `rating`'s migration creates. The services' healthcheck calls `/actuator/health` with `curl` (present in the `eclipse-temurin` JRE image) and requires `"status":"UP"`, so a service counts as healthy only when Spring reports it ready, including its database connection, not merely when its port is open. `restart: on-failure` covers a slow dependency.
+`depends_on` with `condition: service_healthy` makes the order explicit: PostgreSQL and Kafka first, then `ingest` and `rating`, and `billing` last because `rating` creates the `charges` topic it reads (otherwise the broker would auto-create it with its defaults). billing's own PostgreSQL (`billing-postgres`) is a separate server with its own volume (ADR 0019). The services' healthcheck calls `/actuator/health` with `curl` (present in the `eclipse-temurin` JRE image) and requires `"status":"UP"`, so a service counts as healthy only when Spring reports it ready, including its database connection, not merely when its port is open. `restart: on-failure` covers a slow dependency.
 
 ## Memory (read this)
 

@@ -5,18 +5,27 @@ spring:
   application:
     name: ratekit-billing
   datasource:
-    url: jdbc:postgresql://localhost:5432/ratekit
-    username: ratekit
-    password: ratekit
+    # billing's own database (ADR 0019); it never reads rating's
+    url: jdbc:postgresql://localhost:5433/billing
+    username: billing
+    password: billing
   kafka:
     bootstrap-servers: localhost:9092
+    consumer:
+      # reads the charges topic that rating's outbox relay writes
+      group-id: ratekit-billing
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        # the type header names a charge or a progress marker; keep in step with Topics.CHARGES_TYPE_MAPPING
+        spring.json.type.mapping: "charge:io.github.burakboduroglu.ratekit.common.ChargeEvent,watermark:io.github.burakboduroglu.ratekit.common.ChargeFeedWatermark"
+        spring.json.trusted.packages: io.github.burakboduroglu.ratekit.common
   flyway:
-    # billing shares the database with rating but owns only its own tables and its own history
+    # migrations predate billing's own database, so they keep their folder and history table name
     locations: classpath:db/billing
     table: billing_schema_history
-    # the schema already holds rating's tables; baseline at 0 so billing's V1 still runs
-    baseline-on-migrate: true
-    baseline-version: 0
 
 ratekit:
   billing:
@@ -35,6 +44,11 @@ ratekit:
       # must equal ingest's ratekit.ingest.event-time.late-arrival-grace
       late-arrival-grace: PT1H
       timeout: PT10S
+      # and the charges rating stored must have reached billing's table (ADR 0019): billing waits for a
+      # progress marker from rating's relay newer than its own clock plus this margin ...
+      clock-skew-margin: PT1S
+      # ... for at most this long, then refuses the run (409)
+      charge-feed-wait: PT30S
 
 logging:
   pattern:

@@ -27,7 +27,7 @@ import org.testcontainers.utility.DockerImageName;
 
 /** The prepaid hard stop, against a real PostgreSQL, including many events racing for one balance. */
 // no Kafka here: the service is called directly, so keep the listener from connecting anywhere
-@SpringBootTest(properties = "spring.kafka.listener.auto-startup=false")
+@SpringBootTest(properties = {"spring.kafka.listener.auto-startup=false", "ratekit.rating.charge-feed.enabled=false"})
 @Testcontainers
 class BalanceDeductionIntegrationTest {
 

@@ -1,5 +1,6 @@
 package io.github.burakboduroglu.ratekit.billing.scheduler;
 
+import io.github.burakboduroglu.ratekit.billing.exception.ChargesInFlightException;
 import io.github.burakboduroglu.ratekit.billing.exception.RatingNotCaughtUpException;
 import io.github.burakboduroglu.ratekit.billing.exception.RatingProgressUnknownException;
 import io.github.burakboduroglu.ratekit.common.BillingPeriod;
@@ -34,7 +35,7 @@ public class InvoiceScheduler {
     void invoicePreviousMonth() {
         try {
             runs.run(BillingPeriod.containing(clock.instant()).previous());
-        } catch (RatingNotCaughtUpException | RatingProgressUnknownException e) {
+        } catch (RatingNotCaughtUpException | ChargesInFlightException | RatingProgressUnknownException e) {
             log.warn("invoice run skipped, will try again: {}", e.getMessage());
         }
     }

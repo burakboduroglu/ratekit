@@ -7,6 +7,7 @@ import io.github.burakboduroglu.ratekit.rating.domain.Rater;
 import io.github.burakboduroglu.ratekit.rating.domain.TariffBook;
 import io.github.burakboduroglu.ratekit.rating.exception.UnknownAccountException;
 import io.github.burakboduroglu.ratekit.rating.repository.AccountRepository;
+import io.github.burakboduroglu.ratekit.rating.repository.ChargeOutboxRepository;
 import io.github.burakboduroglu.ratekit.rating.repository.ChargeRepository;
 import io.github.burakboduroglu.ratekit.rating.repository.ProcessedEventRepository;
 import io.github.burakboduroglu.ratekit.rating.repository.RejectedEventRepository;
@@ -23,6 +24,9 @@ import org.springframework.transaction.annotation.Transactional;
  * "processed" record is rolled back too, so the event is not lost; the Kafka error handler then retries
  * transient failures and dead-letters permanent ones (see {@code config.ConsumerErrorHandlingConfig}). An event the
  * account cannot afford is not a failure: it is recorded as rejected and stays processed.
+ *
+ * <p>A stored charge is also queued in the charge outbox in the same transaction, so billing hears of
+ * every charge and of nothing that was rolled back (ADR 0019).
  */
 @Service
 public class RatingService {
@@ -38,15 +42,18 @@ public class RatingService {
     private final AccountRepository accounts;
     private final RejectedEventRepository rejected;
     private final UsageCounterRepository usage;
+    private final ChargeOutboxRepository outbox;
 
     RatingService(ProcessedEventRepository processed, TariffBookCache tariffs, ChargeRepository charges,
-                  AccountRepository accounts, RejectedEventRepository rejected, UsageCounterRepository usage) {
+                  AccountRepository accounts, RejectedEventRepository rejected, UsageCounterRepository usage,
+                  ChargeOutboxRepository outbox) {
         this.processed = processed;
         this.tariffs = tariffs;
         this.charges = charges;
         this.accounts = accounts;
         this.rejected = rejected;
         this.usage = usage;
+        this.outbox = outbox;
     }
 
     @Transactional
@@ -69,7 +76,8 @@ public class RatingService {
                     event.accountId(), event.eventId(), charge.amount());
             return Outcome.REJECTED;
         }
-        charges.insert(event, charge);
+        long chargeId = charges.insert(event, charge);
+        outbox.add(chargeId);
         // only a charged event counts toward quota and tiers; a rejected one used nothing
         usage.add(event.accountId(), event.meter(), period, event.quantity());
         return Outcome.RATED;

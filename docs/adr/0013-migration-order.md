@@ -1,6 +1,6 @@
 # 0013. rating and billing may migrate an empty database in either order
 
-Status: accepted (2026-10-07)
+Status: superseded by ADR 0019 (2026-10-08)
 
 ## Context
 
@@ -29,3 +29,4 @@ rating gets the same two settings billing has: `baseline-on-migrate: true` and `
 - Either service may start first on an empty database; the test runs both orders and checks that nothing is left pending.
 - A baseline at 0 can hide nothing real: V1 still runs, so if rating is ever pointed at a database that already holds rating's tables without a history, `V1__init.sql` fails loudly on the existing tables instead of being skipped.
 - billing still needs rating's `charges` table at run time, so compose keeps starting billing after rating.
+- Amended 2026-10-08: superseded by ADR 0019. rating and billing now have separate databases, so neither migrates into a schema that holds the other's tables; both dropped `baseline-on-migrate`, and `MigrationOrderTest` was removed. billing keeps its `db/billing` folder and `billing_schema_history` table name so existing histories stay valid.

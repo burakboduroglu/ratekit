@@ -8,7 +8,7 @@ import java.util.List;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
-/** Read-only view of rating's {@code charges} table. */
+/** Reads billing's own copy of the charges, which the charge feed fills (ADR 0019). */
 @Repository
 public class ChargeUsageRepository {
 

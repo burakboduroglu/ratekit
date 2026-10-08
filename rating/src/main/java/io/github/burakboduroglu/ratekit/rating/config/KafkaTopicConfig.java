@@ -14,4 +14,10 @@ public class KafkaTopicConfig {
     NewTopic usageEventsDeadLetterTopic() {
         return TopicBuilder.name(Topics.USAGE_EVENTS_DLQ).partitions(3).replicas(1).build();
     }
+
+    /** Charges for billing, keyed by account (ADR 0019). rating creates it because rating writes it. */
+    @Bean
+    NewTopic chargesTopic() {
+        return TopicBuilder.name(Topics.CHARGES).partitions(3).replicas(1).build();
+    }
 }

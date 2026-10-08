@@ -47,7 +47,7 @@ An event enters through a REST endpoint and is written to Kafka. A rating servic
 | `common` | Shared library | The event contract (`UsageEvent`), the money rules (`Money`) and topic names. Plain Java, no Spring, so every service agrees on the same types and the same rounding. | none |
 | `ingest` | Producer, the front door | `POST /v1/events` validates an event and writes it to Kafka, keyed by account. Answers `202` only after Kafka has acknowledged the write. Serves the OpenAPI spec and Swagger UI. | 8081 |
 | `rating` | Consumer, the pricing core | Reads events from Kafka, skips duplicates, finds the tariff version in force at the event's time, computes the charge, deducts it from the prepaid balance and stores it. Refuses events the account cannot afford and dead-letters events it cannot process. Opens accounts and takes top-ups over HTTP. Owns the database schema. | 8082 |
-| `billing` | Invoicing | Turns a finished month's charges into one invoice per account, with a line per meter. Safe to run again: an account already invoiced for the month is skipped. Reads `rating`'s `charges` table and owns `invoices` and `invoice_lines`. | 8083 |
+| `billing` | Invoicing | Turns a finished month's charges into one invoice per account, with a line per meter. Safe to run again: an account already invoiced for the month is skipped. Has its own database: receives every charge from `rating` over the `charges` topic, stored once however often it arrives, and owns `invoices` and `invoice_lines`. | 8083 |
 
 ## How an event flows
 
@@ -129,7 +129,7 @@ A version is never edited: a price change is a new version, starting at least on
 
 | Method | Path | Success | Errors |
 | --- | --- | --- | --- |
-| `POST` | `/v1/invoice-runs` with `{"period": "2026-09"}` | `200` with `{period, invoicesCreated, alreadyInvoiced}` | `400` invalid period, `409` the month has not ended or rating has not yet rated everything accepted for it, `503` Kafka could not be asked |
+| `POST` | `/v1/invoice-runs` with `{"period": "2026-09"}` | `200` with `{period, invoicesCreated, alreadyInvoiced}` | `400` invalid period, `409` the month has not ended, rating has not yet rated everything accepted for it, or its charges have not all reached billing, `503` Kafka could not be asked |
 | `GET` | `/v1/invoices/{accountId}?period=2026-09` | `200` with the invoice: lines per meter and the total | `400` invalid period, `404` no such invoice |
 
 Amounts are decimal strings with four digits (`"0.2500"`) so no client rounds them as floating point.
@@ -186,14 +186,14 @@ The invoice shows one `sms` line of 105 units and a total of `0.2500` (100 free,
 **Services on the host** (to debug in an IDE): start only the infrastructure, build, and run the jars in separate terminals. The demo steps above work unchanged.
 
 ```sh
-docker compose up -d postgres kafka
+docker compose up -d postgres billing-postgres kafka
 mvn -B verify
 java -jar ingest/target/ingest-0.1.0-SNAPSHOT.jar
 java -jar rating/target/rating-0.1.0-SNAPSHOT.jar
 java -jar billing/target/billing-0.1.0-SNAPSHOT.jar
 ```
 
-`rating` creates its own schema on first start (Flyway), and `billing` adds its two tables next to it with a separate history table. Either may migrate an empty database first ([ADR 0013](docs/adr/0013-migration-order.md)); in the container setup `billing` still waits for `rating` to be healthy because it reads `rating`'s `charges` table.
+`rating` and `billing` each create their own schema on first start (Flyway), in separate databases (`ratekit` on port 5432, `billing` on 5433). `rating` writes every charge to an outbox in the same transaction and relays it to the `charges` topic; `billing` stores it in its own table ([ADR 0019](docs/adr/0019-billing-database-and-charge-outbox.md)).
 
 **Memory:** the full stack needs about 1.8 GB. Podman's default VM has 2 GB, which is too tight (the kernel killed Kafka); give it 4 GB with `podman machine set --memory 4096`. Even then, stop the stack before `mvn verify` if the VM is small, because the integration tests start their own Kafka and PostgreSQL. Details in [`docs/specs/local-dev.md`](docs/specs/local-dev.md).
 
@@ -229,6 +229,7 @@ Compose services and their pinned images are described in [`docs/specs/local-dev
 | Balance | An affordable event is deducted, an exact-balance event leaves zero, an unaffordable one is rejected and recorded, a free event passes with an empty balance, a rejected event is not revived by a redelivery, 60 racing events never overspend |
 | Billing | Totals are exact sums per meter, a rerun and four concurrent runs create each invoice once, the month includes its first instant and excludes the next month's, a usage is judged in UTC (01:00 in Turkey on 1 October is September), accounts are processed in batches, an open month is refused with 409, and the HTTP API answers with the right statuses |
 | Metrics | Actuator health and Prometheus endpoints answer, event and invoice counters and the rating timer increase with the events, endpoints that reveal configuration or memory stay closed |
+| Charge feed | A charge and its outbox row commit or roll back together, the relay sends one account's charges in order and marks them sent, then writes a marker on every partition; billing stores a redelivered charge once, and refuses to invoice until every partition's marker is newer than its check |
 | Failure handling | An unknown account, a missing tariff and an invalid tariff row are dead-lettered without retrying, an unreadable message is dead-lettered with its original bytes, a transient failure is retried until it succeeds, exhausted retries end in the dead-letter topic, and in every case the next event on the partition is still rated |
 
 ## Continuous integration
@@ -289,7 +290,7 @@ One rating thread handles about 1,400 events per second; three together drained 
 | GitHub Actions CI: build, test (Testcontainers), build the three images | |
 | Metrics, a k6 load test and measured results | |
 
-Known limits today: a transient failure can hold up its partition for up to 7.5 seconds (configurable). Dead letters are inspected and replayed by hand. Events that arrive out of order are rated in arrival order. Rejections for insufficient balance are not reported back to the sender, who already received `202`. ingest refuses usage for a month once its one-hour grace has passed, and billing does not invoice a month until rating has committed every usage event written to Kafka before that grace ended (ADR 0010). An issued invoice is never rewritten, so usage that reaches rating later by other routes (a replayed dead letter) is not added to it. `billing` reads `rating`'s `charges` table directly, so the two services share a database. An invoice run is synchronous. The full stack needs about 1.7 GB, which is nearly all of a default 2 GB Podman VM (4 GB is recommended).
+Known limits today: a transient failure can hold up its partition for up to 7.5 seconds (configurable). Dead letters are inspected and replayed by hand. Events that arrive out of order are rated in arrival order. Rejections for insufficient balance are not reported back to the sender, who already received `202`. ingest refuses usage for a month once its one-hour grace has passed, and billing does not invoice a month until rating has committed every usage event written to Kafka before that grace ended (ADR 0010). An issued invoice is never rewritten, so usage that reaches rating later by other routes (a replayed dead letter) is not added to it. `billing` has its own database and waits, before invoicing, until rating's outbox relay has delivered every charge (ADR 0019). An invoice run is synchronous. The full stack needs about 1.7 GB, which is nearly all of a default 2 GB Podman VM (4 GB is recommended).
 
 ## Code structure
 
@@ -309,17 +310,20 @@ rating/  io.github.burakboduroglu.ratekit.rating
   controller/   AccountController, TariffController
   dto/          CreateAccountRequest, AccountResponse, TopUpRequest, TopUpResponse,
                 TariffRequest, TariffResponse
-  messaging/    UsageEventListener, DeadLetterProducer
-  service/      RatingService, AccountService, TopUpService, TariffService, TariffBookCache
+  messaging/    UsageEventListener, DeadLetterProducer, ChargeFeedProducer, ChargeFeedPublisher
+  service/      RatingService, AccountService, TopUpService, TariffService, TariffBookCache,
+                ChargeRelayService
+  scheduler/    ChargeRelayScheduler
   repository/   AccountRepository, ChargeRepository, ProcessedEventRepository,
                 RejectedEventRepository, TariffRepository, TariffRow, TopUpRepository,
-                UsageCounterRepository
+                UsageCounterRepository, ChargeOutboxRepository, OutboxEntry
   mapper/       TariffMapper, TariffApiMapper, AccountMapper
   config/       KafkaTopicConfig, DeadLetterConfig, ConsumerErrorHandlingConfig, RetryProperties,
-                ClockConfig, TariffCacheConfig, TariffCacheProperties
+                ClockConfig, TariffCacheConfig, TariffCacheProperties, ChargeFeedConfig,
+                ChargeFeedProperties
   exception/    UnknownAccountException, InvalidTariffException, AccountNotFoundException,
                 AccountAlreadyExistsException, TopUpConflictException, TariffStartsTooSoonException,
-                TariffVersionExistsException, ApiExceptionHandler
+                TariffVersionExistsException, ChargeFeedPublishException, ApiExceptionHandler
   domain/       PriceModel, FlatPrice, TieredPrice, FreeQuotaThenFlat,
                 Tariff, TariffBook, Rater, Charge, Account, NoTariffException
 
@@ -327,17 +331,20 @@ billing/  io.github.burakboduroglu.ratekit.billing
   controller/   InvoiceRunController, InvoiceController
   dto/          InvoiceRunRequest, InvoiceRunResponse, InvoiceResponse, InvoiceLineResponse
   mapper/       InvoiceMapper, BillingPeriodMapper
-  service/      InvoiceRunService, InvoiceService, RatingProgress
-  repository/   ChargeUsageRepository, InvoiceRepository, UsageRow
+  service/      InvoiceRunService, InvoiceService, RatingProgress, ChargeFeedProgress,
+                WatermarkChargeFeedProgress, ChargeIntakeService
+  repository/   ChargeUsageRepository, InvoiceRepository, UsageRow, ReceivedChargeRepository,
+                ChargeFeedWatermarkRepository
   scheduler/    InvoiceScheduler
-  config/       BillingConfig, BillingProperties
-  messaging/    KafkaRatingProgress
+  config/       BillingConfig, BillingProperties, ChargeFeedErrorHandlingConfig
+  messaging/    KafkaRatingProgress, ChargeFeedListener
   exception/    InvalidPeriodException, PeriodNotClosedException, InvoiceNotFoundException,
-                RatingNotCaughtUpException, RatingProgressUnknownException, ApiExceptionHandler
+                RatingNotCaughtUpException, RatingProgressUnknownException, ChargesInFlightException,
+                ApiExceptionHandler
   domain/       Invoice, InvoiceLine
 
 common/  io.github.burakboduroglu.ratekit.common
-                UsageEvent, Money, BillingPeriod, Topics
+                UsageEvent, ChargeEvent, ChargeFeedWatermark, Money, BillingPeriod, Topics
 ```
 
 | Layer | Responsibility | Rule |
@@ -424,14 +431,16 @@ SOLID, as applied here:
 | `charges` | One priced charge per processed event | Foreign key to `processed_events`, unique `(account_id, event_id)` |
 | `rejected_events` | Events refused for lack of balance, with what they would have cost | Foreign key to `processed_events` |
 
-`billing` adds two tables of its own, with its own Flyway history (`billing_schema_history`), in the same database:
+`billing` has a database of its own (ADR 0019), with its own Flyway history (`billing_schema_history`):
 
 | Table | Purpose | Key rule |
 | --- | --- | --- |
 | `invoices` | One invoice per account and month, with the total | Unique `(account_id, period_start)`: the guard that makes a run repeatable |
 | `invoice_lines` | One line per meter on an invoice | Primary key `(invoice_id, meter)` |
+| `charges` | billing's copy of every charge, delivered over Kafka | Primary key `(account_id, event_id)`: a redelivery stores nothing |
+| `charge_feed_watermarks` | The newest progress marker per partition of `charges` | An invoice run waits until every partition's marker is newer than its check |
 
-`billing` only reads `charges` (account_id, meter, quantity, amount, occurred_at); those columns are a contract between the two services (see [ADR 0005](docs/adr/0005-invoicing.md)).
+`rating` adds `charge_outbox`: one row per charge, written in the charge's transaction and marked sent once Kafka has acknowledged it. The contract between the services is `ChargeEvent` in `common` ([ADR 0019](docs/adr/0019-billing-database-and-charge-outbox.md)).
 
 Tariff parameters are stored as JSON, one shape per model:
 
@@ -451,8 +460,8 @@ Defaults suit the Compose setup. Any property can be overridden with a Spring en
 | --- | --- | --- |
 | `server.port` | `8081` / `8082` / `8083` | ingest / rating / billing |
 | `spring.kafka.bootstrap-servers` | `localhost:9092` | both |
-| `spring.datasource.url` | `jdbc:postgresql://localhost:5432/ratekit` | rating, billing |
-| `spring.datasource.username`, `password` | `ratekit` | rating, billing |
+| `spring.datasource.url` | `jdbc:postgresql://localhost:5432/ratekit` / `jdbc:postgresql://localhost:5433/billing` | rating / billing |
+| `spring.datasource.username`, `password` | `ratekit` / `billing` | rating / billing |
 | `spring.kafka.consumer.group-id` | `ratekit-rating` | rating |
 | `spring.kafka.consumer.auto-offset-reset` | `earliest` | rating |
 | `ratekit.ingest.event-time.max-future-skew` | `PT5M` | ingest |
@@ -474,6 +483,10 @@ Defaults suit the Compose setup. Any property can be overridden with a Spring en
 | `ratekit.billing.rating-progress.consumer-group` | `ratekit-rating` | billing |
 | `ratekit.billing.rating-progress.late-arrival-grace` | `PT1H`, must equal ingest's `late-arrival-grace` | billing |
 | `ratekit.billing.rating-progress.timeout` | `PT10S` | billing |
+| `ratekit.billing.rating-progress.charge-feed-wait` | `PT30S` (how long a run waits for the charge feed's marker) | billing |
+| `ratekit.billing.rating-progress.clock-skew-margin` | `PT1S` | billing |
+| `ratekit.rating.charge-feed.enabled` | `true` (the outbox relay) | rating |
+| `ratekit.rating.charge-feed.batch-size`, `poll-interval`, `watermark-interval` | `500`, `PT0.5S`, `PT2S` | rating |
 | `spring.kafka.producer.acks` | `all`, with idempotent producer | ingest |
 
 ## Project layout

@@ -8,11 +8,6 @@ spring:
     url: jdbc:postgresql://localhost:5432/ratekit
     username: ratekit
     password: ratekit
-  flyway:
-    # billing migrates the same database with its own history table; if it starts first the schema
-    # is not empty, so baseline at 0 and still run V1 onwards (ADR 0013)
-    baseline-on-migrate: true
-    baseline-version: 0
   kafka:
     bootstrap-servers: localhost:9092
     consumer:
@@ -44,6 +39,14 @@ ratekit:
       initial-interval-ms: 500
       multiplier: 2.0
       max-interval-ms: 5000
+    charge-feed:
+      # the outbox relay that sends every stored charge to billing over the charges topic (ADR 0019)
+      enabled: true
+      batch-size: 500
+      poll-interval: PT0.5S
+      # billing waits for a progress marker newer than its readiness check before it invoices
+      watermark-interval: PT2S
+      send-timeout: PT10S
     tariff-cache:
       # how long a meter's tariff versions stay in memory; a version added through this instance's
       # API is seen at once, another instance may need up to this long, so a new version may start no
